@@ -40,7 +40,7 @@
       </div>
       <div class="mb-3">
         <div class="flex justify-between"><span>離肉的距離（往後）</span><span class="font-bold">{{ goldBackOffset.toFixed(2) }}</span></div>
-        <input type="range" class="w-full accent-fuchsia-400" min="0.8" max="3" step="0.01" v-model.number="goldBackOffset" @input="onGoldBackOffset" />
+        <input type="range" class="w-full accent-fuchsia-400" min="0.8" max="5" step="0.01" v-model.number="goldBackOffset" @input="onGoldBackOffset" />
       </div>
 
       <div class="mb-2 text-sm font-black text-fuchsia-300">🎥 鏡頭 Debug</div>
@@ -54,9 +54,15 @@
       </div>
 
       <div class="mb-2 text-sm font-black text-fuchsia-300">🌲 地圖裝飾 Debug</div>
-      <div>
+      <div class="mb-3">
         <div class="flex justify-between"><span>樹木數量</span><span class="font-bold">{{ treeCount }}</span></div>
         <input type="range" class="w-full accent-fuchsia-400" min="0" max="2000" step="1" v-model.number="treeCount" @input="onTreeCount" />
+      </div>
+
+      <div class="mb-2 text-sm font-black text-fuchsia-300">💰 金錢 Debug</div>
+      <div>
+        <div class="flex justify-between"><span>設定金錢</span><span class="font-bold">{{ moneyDebug.toLocaleString() }}</span></div>
+        <input type="range" class="w-full accent-fuchsia-400" min="0" max="5000" step="50" v-model.number="moneyDebug" @input="onMoney" />
       </div>
     </div>
 
@@ -108,8 +114,8 @@ const safeTop = { top: 'max(0.75rem, env(safe-area-inset-top))' };
 
 /** Debug：背後金條參數（與 game.ts 預設一致） */
 const showDebug = ref(false);
-const goldLayerH = ref(0.3);
-const goldBackOffset = ref(1.55);
+const goldLayerH = ref(0.48);
+const goldBackOffset = ref(2.48);
 function onGoldLayerH() {
   game?.setGoldLayerH(goldLayerH.value);
 }
@@ -129,6 +135,11 @@ function onCamAngle() {
 const treeCount = ref(2000);
 function onTreeCount() {
   game?.setTreeCount(treeCount.value);
+}
+/** Debug：直接設定金錢（拉桿值＝設定目標，非即時金錢） */
+const moneyDebug = ref(0);
+function onMoney() {
+  game?.setMoney(moneyDebug.value);
 }
 
 onMounted(() => {

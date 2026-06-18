@@ -16,9 +16,10 @@ import {
   DynamicTexture,
   AnimationGroup,
   AssetContainer,
+  ParticleSystem,
 } from '@babylonjs/core';
 import { createTerrain } from './terrain';
-import { loadCharacter, loadProp, loadAnimatedFleet, type AnimatedModel } from './model-loader';
+import { loadCharacter, loadProp, loadAnimatedFleet, type AnimatedModel, type AnimatedFleet } from './model-loader';
 import { BackStack } from './back-stack';
 import { TreeField, type TreePlacement } from './tree-field';
 import { BloodDecals } from './decals';
@@ -32,6 +33,7 @@ const TABLE_LEG_H = 0.85;
 const TABLE_TOP_THICK = 0.18;
 const COUNTER_TOP_Y = TABLE_LEG_H + TABLE_TOP_THICK; // 攤位桌面
 const MEAT_SIZE = 0.95; // 肉模型正規化最長邊（攤位/顧客手上，比照原專案大小）
+const CUSTOMER_MEAT = 5; // 每位顧客一次最多買/拿幾片肉
 const BAR_SIZE = 1.05; // 金條正規化最長邊（收銀台金條，比照原專案大小）
 /** 顧客買到肉時隨機冒的開心 emoji */
 const HAPPY_EMOJIS = ['😋', '😄', '🥳', '❤️', '👍', '🤤'];
@@ -88,6 +90,8 @@ export interface GameHandle {
   setCameraAlpha: (v: number) => void;
   /** Debug：地圖樹木顯示數量 */
   setTreeCount: (v: number) => void;
+  /** Debug：直接設定金錢 */
+  setMoney: (v: number) => void;
 }
 
 /** 一池同源 InstancedMesh，依傳入的位置陣列顯示前 N 個（其餘隱藏） */
@@ -185,15 +189,27 @@ interface Customer {
   yOffset: number;
   state: CustState;
   slot: number;
-  hasMeat: boolean;
+  meatCount: number; // 身上拿著的肉片數（成交後 1~CUSTOMER_MEAT）
   bubble: Bubble; // 頭頂情緒泡泡
   waitTimer: number; // 排隊等待累計（決定不耐煩程度）
   bubbleTimer: number; // 開心泡泡剩餘秒數
   happyEmoji: string; // 這次買到時隨機選的開心 emoji
 }
 
+/** 矩形牧場區域（中心 + 半邊長） */
+interface Region {
+  cx: number;
+  cz: number;
+  halfX: number;
+  halfZ: number;
+}
+
 /** 一頭牛（各自帶骨骼動畫的模型副本） */
 interface Cow {
+  /** 所屬牧場（決定遊蕩/重生/邊界範圍） */
+  pasture: Region;
+  /** 是否參與更新與顯示（牧場2 的牛在解鎖前為 false） */
+  active: boolean;
   root: TransformNode; // 包裝節點（控位置/朝向/縮放）
   bar: HpBar;
   idle?: AnimationGroup;
@@ -205,6 +221,8 @@ interface Cow {
   x: number;
   z: number;
   hp: number;
+  hpMax: number; // 血量上限（牧場2 怪物為牧場1 的兩倍）
+  meatYield: number; // 死亡掉肉數（牧場2 怪物為兩倍）
   alive: boolean;
   tx: number; // 遊蕩目標
   tz: number;
@@ -223,6 +241,21 @@ interface Drop {
   x: number;
   z: number;
   active: boolean;
+}
+
+/** 牧羊犬：自動把地上的肉撿回攤位 */
+interface Dog {
+  root: TransformNode;
+  idle?: AnimationGroup;
+  walk?: AnimationGroup;
+  animState: 'idle' | 'walk';
+  baseScale: number;
+  yOffset: number;
+  x: number;
+  z: number;
+  state: 'seek' | 'deliver'; // 找肉 / 送回攤位
+  target: Drop | null;
+  carrying: boolean;
 }
 
 export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {}): GameHandle {
@@ -267,12 +300,39 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   woodLight.diffuseColor = new Color3(0.7, 0.5, 0.3);
   woodLight.specularColor = Color3.Black();
 
-  /** ===== 店面圍場（前方 +z 留客人大門、後方 -z 留牧場通道） ===== */
-  buildShopFence(scene, wood);
-
-  /** ===== 牧場圍場（店面後方，南側留通道對齊店面後門） ===== */
-  buildPastureFence(scene, wood);
+  /** ===== 牧場2 容器（店面西側，初始藏在樹林後；整片掛在 holder 上，買炸藥後一次開啟） ===== */
+  const pasture2Holder = new TransformNode('pasture2', scene);
+  pasture2Holder.setEnabled(false);
   makeSign(scene, '🐄 牧場', CONFIG.pasture.cx, 2.6, CONFIG.pasture.cz + CONFIG.pasture.halfZ - 0.5);
+  makeSign(scene, '🐄 牧場2', CONFIG.pasture2.cx, 2.6, CONFIG.pasture2.cz + CONFIG.pasture2.halfZ - 0.5).parent =
+    pasture2Holder;
+
+  /**
+   * ===== 圍欄（Minecraft 風 Fence_Center 模型，2 單位一段，剛好對齊 seg=2 網格） =====
+   * 模型非阻塞載入，完成後再蓋柵欄（載入失敗則 fallback 程序化木欄）。
+   */
+  async function setupFences() {
+    const center = await loadProp(scene, '/models/fence/Fence_Center.gltf', 2.0);
+    if (center) center.isVisible = false;
+    buildShopFence(scene, center, wood);
+    buildPastureFence(scene, center, wood, CONFIG.pasture, [{ side: 'south', center: CONFIG.pasture.cx, half: 3 }]);
+    buildPastureFence(scene, center, wood, CONFIG.pasture2, [{ side: 'east', center: -7, half: 3 }], pasture2Holder);
+  }
+  void setupFences();
+
+  /** ===== 炸藥購買框：站著付滿 💲500 即炸開牧場2 ===== */
+  const dynamiteStation = new BuyStation(scene, CONFIG.dynamite.x, CONFIG.dynamite.z, CONFIG.dynamite.cost, '🧨', '牧場2 已開通');
+  let dynamitePaid = 0;
+  let pasture2Unlocked = false;
+  /** 爆炸時的畫面震動強度（1→0 衰減） */
+  let camShake = 0;
+
+  /** ===== 牧羊犬購買框：站著付滿 💲300 召喚一隻會自動撿肉的狗 ===== */
+  const dogStation = new BuyStation(scene, CONFIG.dog.x, CONFIG.dog.z, CONFIG.dog.cost, '🐕', '已有狗狗幫手');
+  let dogPaid = 0;
+  let dogBought = false;
+  const dogs: Dog[] = [];
+  let dogFleet: AnimatedFleet | null = null;
 
   /** ===== 販售攤位 ===== */
   buildTable(scene, wood, CONFIG.counter.x, CONFIG.counter.z);
@@ -292,8 +352,11 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   const stations = UPGRADES.map((u) => new UpgradeStation(scene, u));
 
   /** ===== 玩家 ===== */
+  /** 玩家整體放大倍率（模型與手上武器掛在 player 節點下，一起縮放；背後堆疊另行同步） */
+  const PLAYER_SCALE = 1.7;
   const player = new TransformNode('player', scene);
   player.position.set(0, 0, 0);
+  player.scaling.setAll(PLAYER_SCALE);
   const fbMat = new StandardMaterial('player-fb', scene);
   fbMat.diffuseColor = new Color3(0.2, 0.5, 0.9);
   fbMat.specularColor = Color3.Black();
@@ -304,15 +367,21 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   let playerModel: AnimatedModel | null = null;
   let moving = false;
   /** 攻擊動畫狀態（參考原專案：揮刀後維持攻擊動作一段時間） */
-  let playerAnimState: 'idle' | 'walk' | 'attack' = 'idle';
+  let playerAnimState: 'idle' | 'walk' | 'attack' | 'shoot' = 'idle';
   let playerAttackTimer = 0;
-  /** 背後肉堆（thin-instance，掛在背上隨步伐微擺；參考原專案 BackStack） */
+  /** 背後肉堆（thin-instance，掛在背上隨步伐微擺；參考原專案 BackStack）。
+   *  非 player 子物件、以世界座標擺放，故各項尺寸/高度需乘上 PLAYER_SCALE 同步放大 */
   const backStack = new BackStack(scene);
+  backStack.setScale(2 * PLAYER_SCALE); // 預設 meatMult=2
+  backStack.setBaseUp(0.8 * PLAYER_SCALE);
+  backStack.setBackOffset(1.0 * PLAYER_SCALE);
+  backStack.setLayerH(0.15 * PLAYER_SCALE);
   /** 背後金條堆（疊在肉的後面，數量隨金幣多寡顯示） */
   const goldStack = new BackStack(scene, '/models/winter/gold_bar.glb', new Color3(1, 0.84, 0.2));
-  goldStack.setBackOffset(1.55); // 比肉更靠後（在肉的後面）
-  goldStack.setBaseUp(0.8);
-  goldStack.setLayerH(0.3); // 金條層距加大（否則疊太密、看起來長很慢）
+  goldStack.setScale(2 * PLAYER_SCALE);
+  goldStack.setBackOffset(1.55 * PLAYER_SCALE); // 比肉更靠後（在肉的後面）
+  goldStack.setBaseUp(0.8 * PLAYER_SCALE);
+  goldStack.setLayerH(0.3 * PLAYER_SCALE); // 金條層距加大（否則疊太密、看起來長很慢）
   /** 背上最多顯示幾根金條（超過不再往上疊，邏輯仍計數） */
   const GOLD_BARS_MAX = 60;
   /** 付款時每花掉這麼多錢，就有一根金條從背上飛進框框 */
@@ -344,7 +413,10 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
 
   function equipWeapon(i: number) {
     equipped = i;
-    weaponMeshes.forEach((m, j) => m?.setEnabled(j === i));
+    const ranged = WEAPONS[i].ranged;
+    /** 遠程（槍）：直接用玩家模型自帶的槍，藏起遊戲的武器 mesh；近戰：顯示對應武器 mesh、藏起模型的槍 */
+    weaponMeshes.forEach((m, j) => m?.setEnabled(!ranged && j === i));
+    playerModel?.builtinWeapon?.setEnabled(ranged);
     weaponStations.forEach((ws, j) => ws.setEquipped(j === i));
     swingT = 0;
     recoilT = 0;
@@ -380,6 +452,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   let cashStack: InstanceStack | null = null;
   let custMeatStack: InstanceStack | null = null;
   let dropStack: InstanceStack | null = null;
+  let dogMeatStack: InstanceStack | null = null;
   let cowContainer: AssetContainer | null = null;
 
   /** 金條飛行（收錢/付款）與肉飛行（背→桌）動畫池 */
@@ -394,7 +467,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   let counterMeat = 0;
   let cashPending = 0; // 待收金額（金錢）
   let cashBars = 0; // 桌上待收的金條「根數」（每筆銷售 +1）
-  let goldCarried = 0; // 已搬到背上的金條根數（與桌上 1:1）
+  // 背上金條根數直接由 money 換算（見 renderStacks），不另存計數，避免與金錢不同步
 
   /** 由升級等級推導的數值 */
   const carryCap = () => Infinity; // 攜帶肉無上限
@@ -412,9 +485,9 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   let lastCashN = -1;
 
   const P = CONFIG.pasture;
-  const randPasture = (): [number, number] => [
-    P.cx + (Math.random() * 2 - 1) * (P.halfX - 1),
-    P.cz + (Math.random() * 2 - 1) * (P.halfZ - 1),
+  const randPasture = (region: Region = P): [number, number] => [
+    region.cx + (Math.random() * 2 - 1) * (region.halfX - 1),
+    region.cz + (Math.random() * 2 - 1) * (region.halfZ - 1),
   ];
 
   /** ===== 非同步載入模型，完成後建立 instance 池、牛群、玩家視覺 ===== */
@@ -495,16 +568,21 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   }
 
   async function initAssets() {
-    const [meatMesh, barMesh, cowFleet, hero, cf1, cf2, cm1, cm2] = await Promise.all([
+    const [meatMesh, barMesh, cowFleet, makoFleet, dogFleetLoaded, hero, cf1, cf2, cm1, cm2] = await Promise.all([
       loadProp(scene, '/models/winter/meat.glb', MEAT_SIZE),
       loadProp(scene, '/models/winter/gold_bar.glb', BAR_SIZE),
       loadAnimatedFleet(scene, '/models/cow_animated.glb', CONFIG.cow.size),
-      loadCharacter(scene, '/models/shopkeeper.glb', CONFIG.player.height),
+      /** 牧場2 怪物：殭屍/海盜 Mako（含 Idle/Walk/Death 動畫） */
+      loadAnimatedFleet(scene, '/models/enemies/Characters_Mako.gltf', CONFIG.cow.size),
+      /** 牧羊犬（含 Idle/Walk/Run 動畫） */
+      loadAnimatedFleet(scene, '/models/Characters_GermanShepherd.gltf', CONFIG.dog.size),
+      loadCharacter(scene, '/models/Characters_Shaun_SingleWeapon.gltf', CONFIG.player.height),
       loadAnimatedFleet(scene, '/models/customers/Character_Female_1.glb', CONFIG.customer.height),
       loadAnimatedFleet(scene, '/models/customers/Character_Female_2.glb', CONFIG.customer.height),
       loadAnimatedFleet(scene, '/models/customers/Character_Male_1.glb', CONFIG.customer.height),
       loadAnimatedFleet(scene, '/models/customers/Character_Male_2.glb', CONFIG.customer.height),
     ]);
+    dogFleet = dogFleetLoaded;
     /** 場外北極熊（純氣氛，立在牧場後方） */
     void loadProp(scene, '/models/winter/polar_bear.glb', 3.4).then((b) => {
       if (b) b.position.set(-12, 0, P.cz - P.halfZ - 6);
@@ -513,42 +591,50 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     const meatSrc = meatMesh ?? fallbackMeat(scene);
     const barSrc = barMesh ?? fallbackBar(scene);
     counterStack = new InstanceStack(meatSrc, COUNTER_MAX);
-    custMeatStack = new InstanceStack(meatSrc, CONFIG.customer.max);
+    custMeatStack = new InstanceStack(meatSrc, CONFIG.customer.max * CUSTOMER_MEAT);
     cashStack = new InstanceStack(barSrc, CASH_MAX);
     goldFly.init(barSrc);
     meatFly.init(meatSrc);
     /** 掉落的肉大小＝背在身上的肉（BackStack ≈ 1.04，MEAT_SIZE 0.95 → 約 ×1.1） */
     dropStack = new InstanceStack(meatSrc, CONFIG.meatDrop.max, undefined, 1.1);
+    /** 狗叼著的肉（最多 4 隻狗，目前 1 隻） */
+    dogMeatStack = new InstanceStack(meatSrc, 4, undefined, 1.0);
 
     /** 建立牛群：每頭牛各 instantiate 一份帶骨骼動畫的副本 */
     if (cowFleet) {
       cowContainer = cowFleet.container;
-      for (let i = 0; i < CONFIG.cow.count; i++) {
-        const ent = cowFleet.container.instantiateModelsToScene((n) => `cow${i}_${n}`, false);
+      let cowIdx = 0;
+      const makeCow = (fleet: AnimatedFleet, region: Region, active: boolean, hpMax: number, meatYield: number) => {
+        const i = cowIdx++;
+        const ent = fleet.container.instantiateModelsToScene((n) => `cow${i}_${n}`, false);
         const gltfRoot = ent.rootNodes[0] as TransformNode;
         const holder = new TransformNode(`cow${i}`, scene);
         gltfRoot.parent = holder;
-        holder.scaling.setAll(cowFleet.scale);
+        holder.scaling.setAll(fleet.scale);
         ent.rootNodes.forEach((n) => (n as TransformNode).getChildMeshes?.().forEach((m) => (m.isPickable = false)));
         const g = ent.animationGroups;
         g.forEach((ag) => ag.stop());
         const walk = g.find((ag) => /walk(?!slow)/i.test(ag.name)) ?? g.find((ag) => /walk|run/i.test(ag.name));
         const idle = g.find((ag) => /idle/i.test(ag.name)) ?? g[0];
         const death = g.find((ag) => /death|die/i.test(ag.name));
-        const [x, z] = randPasture();
-        const [tx, tz] = randPasture();
+        const [x, z] = randPasture(region);
+        const [tx, tz] = randPasture(region);
         const c: Cow = {
+          pasture: region,
+          active,
           root: holder,
           bar: new HpBar(scene),
           idle,
           walk,
           death,
           animState: 'idle',
-          baseScale: cowFleet.scale,
-          yOffset: cowFleet.yOffset,
+          baseScale: fleet.scale,
+          yOffset: fleet.yOffset,
           x,
           z,
-          hp: CONFIG.cow.hp,
+          hp: hpMax,
+          hpMax,
+          meatYield,
           alive: true,
           tx,
           tz,
@@ -561,10 +647,19 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
           aggroTimer: 0,
           calmTimer: 0,
         };
-        idle?.start(true);
-        applyCow(c);
+        if (active) {
+          idle?.start(true);
+          applyCow(c);
+        } else {
+          holder.setEnabled(false); // 牧場2 的怪物：解鎖前完全隱藏、不更新（停用動畫省效能）
+        }
         cows.push(c);
-      }
+      };
+      /** 牧場1：開局即有（普通牛）；牧場2：Mako 怪物，血量×2、掉肉×2，先隱藏待解鎖 */
+      const monsterFleet = makoFleet ?? cowFleet;
+      for (let i = 0; i < CONFIG.cow.count; i++) makeCow(cowFleet, CONFIG.pasture, true, CONFIG.cow.hp, CONFIG.cow.meatYield);
+      for (let i = 0; i < CONFIG.cow.count; i++)
+        makeCow(monsterFleet, CONFIG.pasture2, false, CONFIG.cow.hp * 2, CONFIG.cow.meatYield * 2);
     }
 
     if (hero) {
@@ -609,7 +704,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
           yOffset: f.yOffset,
           state: 'enter',
           slot: -1,
-          hasMeat: false,
+          meatCount: 0,
           bubble: new Bubble(scene),
           waitTimer: 0,
           bubbleTimer: 0,
@@ -656,10 +751,10 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     /** 動畫：死亡 > 走路 > idle */
     setCowAnim(c, !c.alive ? 'death' : c.walking ? 'walk' : 'idle');
     /** 頭頂血條：活著且受過傷才顯示 */
-    const showBar = c.alive && c.hp < CONFIG.cow.hp;
+    const showBar = c.alive && c.hp < c.hpMax;
     c.bar.setEnabled(showBar);
     if (showBar) {
-      c.bar.setRatio(c.hp / CONFIG.cow.hp);
+      c.bar.setRatio(c.hp / c.hpMax);
       c.bar.setPosition(c.x, CONFIG.cow.size + 0.6, c.z);
     }
   }
@@ -736,19 +831,30 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       clampPlayer(player.position);
       player.rotation.y = Math.atan2(wx, wz);
     }
-    /** 動畫狀態：攻擊優先，其次走路、idle（僅在狀態改變時切換，參考原專案） */
+    /** 動畫狀態：攻擊優先（裝槍用射擊姿勢），其次走路、idle（僅在狀態改變時切換） */
     if (playerAttackTimer > 0) playerAttackTimer -= dt;
     if (playerModel) {
-      const desired: 'idle' | 'walk' | 'attack' =
-        playerAttackTimer > 0 && playerModel.attack ? 'attack' : moving ? 'walk' : 'idle';
+      const ranged = WEAPONS[equipped].ranged;
+      let desired: 'idle' | 'walk' | 'attack' | 'shoot' = moving ? 'walk' : 'idle';
+      if (playerAttackTimer > 0) {
+        if (ranged && playerModel.shoot) desired = 'shoot';
+        else if (!ranged && playerModel.attack) desired = 'attack';
+      }
       if (desired !== playerAnimState) {
         playerAnimState = desired;
         playerModel.idle?.stop();
         playerModel.walk?.stop();
         playerModel.attack?.stop();
-        if (desired === 'attack') playerModel.attack?.start(true);
-        else if (desired === 'walk') playerModel.walk?.start(true);
-        else playerModel.idle?.start(true);
+        playerModel.shoot?.stop();
+        const ag =
+          desired === 'attack'
+            ? playerModel.attack
+            : desired === 'shoot'
+              ? playerModel.shoot
+              : desired === 'walk'
+                ? playerModel.walk
+                : playerModel.idle;
+        ag?.start(true);
       }
     }
 
@@ -758,6 +864,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     const contact2 = cowCfg.contactRadius * cowCfg.contactRadius;
     let hurtThisFrame = false;
     for (const c of cows) {
+      if (!c.active) continue; // 牧場2 未解鎖前的牛不參與更新
       if (c.pulse > 0) c.pulse = Math.max(0, c.pulse - dt * 4);
       if (c.lunge > 0) c.lunge = Math.max(0, c.lunge - dt * 4);
       if (!c.alive) {
@@ -769,12 +876,12 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         }
         c.respawn -= dt;
         if (c.respawn <= 0) {
-          const [x, z] = randPasture();
+          const [x, z] = randPasture(c.pasture);
           c.x = x;
           c.z = z;
-          c.hp = cowCfg.hp;
+          c.hp = c.hpMax;
           c.alive = true;
-          const [tx, tz] = randPasture();
+          const [tx, tz] = randPasture(c.pasture);
           c.tx = tx;
           c.tz = tz;
           c.pause = 0;
@@ -809,7 +916,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
           /** 追夠了：放棄、進入冷靜期、改去遊蕩 */
           c.aggroTimer = 0;
           c.calmTimer = cowCfg.calmSec;
-          const [tx, tz] = randPasture();
+          const [tx, tz] = randPasture(c.pasture);
           c.tx = tx;
           c.tz = tz;
           c.pause = 0;
@@ -841,7 +948,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
           const dz = c.tz - c.z;
           const d = Math.hypot(dx, dz);
           if (d < 0.3) {
-            const [tx, tz] = randPasture();
+            const [tx, tz] = randPasture(c.pasture);
             c.tx = tx;
             c.tz = tz;
             c.pause = 0.5 + Math.random() * 1.8;
@@ -853,9 +960,10 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         }
       }
       c.walking = moved;
-      /** 牛限制在牧場內 */
-      c.x = Math.max(P.cx - P.halfX + 0.8, Math.min(P.cx + P.halfX - 0.8, c.x));
-      c.z = Math.max(P.cz - P.halfZ + 0.8, Math.min(P.cz + P.halfZ - 0.8, c.z));
+      /** 牛限制在所屬牧場內 */
+      const pg = c.pasture;
+      c.x = Math.max(pg.cx - pg.halfX + 0.8, Math.min(pg.cx + pg.halfX - 0.8, c.x));
+      c.z = Math.max(pg.cz - pg.halfZ + 0.8, Math.min(pg.cz + pg.halfZ - 0.8, c.z));
       applyCow(c);
     }
 
@@ -879,7 +987,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     playerBar.setEnabled(showPlayerBar);
     if (showPlayerBar) {
       playerBar.setRatio(hp / CONFIG.player.maxHp);
-      playerBar.setPosition(player.position.x, CONFIG.player.height + 0.6, player.position.z);
+      playerBar.setPosition(player.position.x, CONFIG.player.height * PLAYER_SCALE + 0.6, player.position.z);
     }
 
     /** --- 戰鬥：依裝備武器攻擊（近戰範圍斬／衝鋒槍遠程） --- */
@@ -891,7 +999,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       const r2 = wpn.range * wpn.range;
       const inRange: { c: Cow; d: number }[] = [];
       for (const c of cows) {
-        if (!c.alive) continue;
+        if (!c.active || !c.alive) continue;
         const dx = c.x - player.position.x;
         const dz = c.z - player.position.z;
         const d = dx * dx + dz * dz;
@@ -930,7 +1038,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
             c.respawn = CONFIG.cow.respawnSec;
             c.bar.setEnabled(false);
             bloodDecals.spawn(c.x, c.z);
-            for (let k = 0; k < CONFIG.cow.meatYield; k++) {
+            for (let k = 0; k < c.meatYield; k++) {
               spawnDrop(c.x + (Math.random() - 0.5) * 1.2, c.z + (Math.random() - 0.5) * 1.2);
             }
             anyKill = true;
@@ -981,22 +1089,22 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       }
     }
 
-    /** --- 擺肉到攤位 --- */
+    /** --- 擺肉到攤位（速度 ×2） --- */
     if (near(CONFIG.counter.x, CONFIG.counter.z, reach + 1) && carried > 0 && counterMeat < counterCap()) {
       placeAccum += dt;
-      if (placeAccum >= 0.09) {
+      if (placeAccum >= 0.045) {
         placeAccum = 0;
         carried--;
         counterMeat++;
         spawnPlaceFly(); // 肉從背後飛到桌上動畫
         sound.place();
       }
-    } else placeAccum = 0.09;
+    } else placeAccum = 0.045;
 
-    /** --- 收錢：站到錢框內，一次搬一根（桌上 −1、背上 +1），金幣加上該根價值 --- */
+    /** --- 收錢：站到錢框內，一次搬一根（桌上 −1、背上 +1），金幣加上該根價值（速度 ×4） --- */
     if (near(CONFIG.cash.x, CONFIG.cash.z, reach + 0.6) && cashBars > 0) {
       cashAccum += dt;
-      if (cashAccum >= 0.12) {
+      if (cashAccum >= 0.05) {
         cashAccum = 0;
         /** 把待收金額平均分到剩餘金條，取出一根的價值（最後一根剛好歸零） */
         const give = Math.max(1, Math.round(cashPending / cashBars));
@@ -1004,11 +1112,10 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         cashPending -= v;
         cashBars -= 1;
         money += v;
-        goldCarried += 1; // 桌上一根 → 背上一根
-        spawnCollectFly(); // 金條飛回背後動畫
+        spawnCollectFly(); // 金條飛回背後動畫（背上根數由 money 換算）
         sound.cash();
       }
-    } else cashAccum = 0.12;
+    } else cashAccum = 0.05;
 
     /** --- 飛行物件更新（金條收錢/付款、肉擺攤） --- */
     goldFly.update(dt);
@@ -1056,9 +1163,8 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
           money -= pay;
           /** 每付掉一份金額，就從背上丟一根金條飛進框框、背後金條減一 */
           payFlyAccum += pay;
-          while (payFlyAccum >= PAY_PER_BAR && goldCarried > 0) {
+          while (payFlyAccum >= PAY_PER_BAR) {
             payFlyAccum -= PAY_PER_BAR;
-            goldCarried -= 1;
             spawnPayFly(w.x, w.z);
           }
         }
@@ -1078,6 +1184,57 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       weaponStations[i].setEquipped(i === equipped);
     }
 
+    /** --- 炸藥框：站著付款（進度條），付滿即炸開牧場2 --- */
+    if (!pasture2Unlocked) {
+      const D = CONFIG.dynamite;
+      if (near(D.x, D.z, 2.0) && money > 0) {
+        const remain = D.cost - dynamitePaid;
+        const pay = Math.min(remain, money, (D.cost / WEAPON_BUY_TIME) * dt);
+        if (pay > 0) {
+          dynamitePaid += pay;
+          money -= pay;
+          payFlyAccum += pay;
+          while (payFlyAccum >= PAY_PER_BAR) {
+            payFlyAccum -= PAY_PER_BAR;
+            spawnPayFly(D.x, D.z);
+          }
+        }
+        dynamiteStation.setProgress(D.cost > 0 ? dynamitePaid / D.cost : 1);
+        if (dynamitePaid >= D.cost - 0.001) {
+          dynamiteStation.setDone();
+          revealPasture2();
+        }
+      }
+    }
+
+    /** --- 牧羊犬框：站著付款（進度條），付滿即召喚一隻會撿肉的狗 --- */
+    if (!dogBought) {
+      const G = CONFIG.dog;
+      if (near(G.x, G.z, 2.0) && money > 0) {
+        const remain = G.cost - dogPaid;
+        const pay = Math.min(remain, money, (G.cost / WEAPON_BUY_TIME) * dt);
+        if (pay > 0) {
+          dogPaid += pay;
+          money -= pay;
+          payFlyAccum += pay;
+          while (payFlyAccum >= PAY_PER_BAR) {
+            payFlyAccum -= PAY_PER_BAR;
+            spawnPayFly(G.x, G.z);
+          }
+        }
+        dogStation.setProgress(G.cost > 0 ? dogPaid / G.cost : 1);
+        if (dogPaid >= G.cost - 0.001) {
+          dogBought = true;
+          dogStation.setDone();
+          spawnDog();
+          sound.upgrade();
+        }
+      }
+    }
+
+    /** --- 牧羊犬行為：找地上的肉 → 叼回攤位 --- */
+    updateDogs(dt);
+
     /** --- 顧客生成 --- */
     spawnAccum += dt;
     const active = customers.filter((c) => c.root.isEnabled());
@@ -1089,7 +1246,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         free.root.position.set(CONFIG.customer.gate.x + (Math.random() - 0.5) * 6, free.yOffset, CONFIG.customer.gate.z);
         free.state = 'enter';
         free.slot = -1;
-        free.hasMeat = false;
+        free.meatCount = 0;
         free.waitTimer = 0;
         free.bubbleTimer = 0;
         free.bubble.setEnabled(false);
@@ -1138,10 +1295,12 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         }
       } else if (c.state === 'buy') {
         if (counterMeat > 0) {
-          counterMeat--;
-          cashPending += price();
-          cashBars += 1; // 每筆銷售在桌上多一根金條
-          c.hasMeat = true;
+          /** 一次拿走最多 CUSTOMER_MEAT 片（不足就拿剩下的） */
+          const take = Math.min(CUSTOMER_MEAT, counterMeat);
+          counterMeat -= take;
+          cashPending += price() * take;
+          cashBars += take; // 每片肉在桌上多一根金條
+          c.meatCount = take;
           c.state = 'leave';
           if (c.slot >= 0) {
             slotOccupied[c.slot] = null;
@@ -1160,7 +1319,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         if (c.root.position.z > CONFIG.customer.gate.z + 1.5) {
           c.root.setEnabled(false);
           c.bubble.setEnabled(false);
-          c.hasMeat = false;
+          c.meatCount = 0;
           const qi = queue.indexOf(c);
           if (qi >= 0) queue.splice(qi, 1);
           continue;
@@ -1194,14 +1353,20 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     /** --- 背後肉堆 + 金條堆（金條疊在肉的後面，數量隨金幣多寡） --- */
     backStack.setCount(carried);
     backStack.update(dt, player.position.x, player.position.y, player.position.z, player.rotation.y, moving);
-    goldStack.setCount(Math.min(GOLD_BARS_MAX, goldCarried));
+    goldStack.setCount(Math.min(GOLD_BARS_MAX, Math.floor(money / PAY_PER_BAR)));
     goldStack.update(dt, player.position.x, player.position.y, player.position.z, player.rotation.y, moving);
 
-    /** --- 相機平滑跟隨玩家 --- */
+    /** --- 相機平滑跟隨玩家（爆炸時加上短暫震動） --- */
     const f = Math.min(1, dt * cam.follow);
     camera.target.x += (player.position.x - camera.target.x) * f;
     camera.target.z += (player.position.z - camera.target.z) * f;
     camera.target.y = 0.8;
+    if (camShake > 0) {
+      camShake = Math.max(0, camShake - dt * 2);
+      const s = camShake * 0.6;
+      camera.target.x += (Math.random() * 2 - 1) * s;
+      camera.target.z += (Math.random() * 2 - 1) * s;
+    }
 
     renderStacks();
 
@@ -1235,10 +1400,190 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     d.z = z;
   }
 
+  /** 一次性爆炸煙塵粒子（炸開牧場2 用） */
+  function spawnExplosion(x: number, y: number, z: number) {
+    const puff = new DynamicTexture('puff', { width: 64, height: 64 }, scene, false);
+    const pc = puff.getContext() as CanvasRenderingContext2D;
+    const grad = pc.createRadialGradient(32, 32, 1, 32, 32, 30);
+    grad.addColorStop(0, 'rgba(255,255,255,1)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    pc.fillStyle = grad;
+    pc.fillRect(0, 0, 64, 64);
+    puff.hasAlpha = true;
+    puff.update();
+
+    const ps = new ParticleSystem('boom', 400, scene);
+    ps.particleTexture = puff;
+    ps.emitter = new Vector3(x, y, z);
+    ps.minEmitBox = new Vector3(-1.5, -0.5, -1.5);
+    ps.maxEmitBox = new Vector3(1.5, 1.5, 1.5);
+    ps.color1 = new Color4(0.95, 0.78, 0.45, 1);
+    ps.color2 = new Color4(0.55, 0.55, 0.6, 1);
+    ps.colorDead = new Color4(0.3, 0.3, 0.32, 0);
+    ps.minSize = 0.8;
+    ps.maxSize = 3.0;
+    ps.minLifeTime = 0.4;
+    ps.maxLifeTime = 1.1;
+    ps.emitRate = 1600;
+    ps.minEmitPower = 5;
+    ps.maxEmitPower = 13;
+    ps.updateSpeed = 0.02;
+    ps.gravity = new Vector3(0, -7, 0);
+    ps.direction1 = new Vector3(-1.2, 1.5, -1.2);
+    ps.direction2 = new Vector3(1.2, 2.5, 1.2);
+    ps.blendMode = ParticleSystem.BLENDMODE_STANDARD;
+    ps.disposeOnStop = true;
+    ps.targetStopDuration = 0.25; // 短暫噴發後自動停止並釋放
+    ps.start();
+    setTimeout(() => puff.dispose(), 2500);
+  }
+
+  /** 炸開牧場2：清樹、顯示柵欄/招牌、啟用牛群、特效 */
+  function revealPasture2() {
+    if (pasture2Unlocked) return;
+    pasture2Unlocked = true;
+    pasture2Holder.setEnabled(true);
+    /** 清掉牧場2 與西側走道範圍內的樹林 */
+    treeField?.hideRegion(-37, -9, -12, 8);
+    /** 啟用牧場2 的牛群 */
+    for (const c of cows) {
+      if (c.pasture !== CONFIG.pasture2 || c.active) continue;
+      c.active = true;
+      const [x, z] = randPasture(c.pasture);
+      const [tx, tz] = randPasture(c.pasture);
+      c.x = x;
+      c.z = z;
+      c.tx = tx;
+      c.tz = tz;
+      c.hp = c.hpMax;
+      c.alive = true;
+      c.dying = 0;
+      c.respawn = 0;
+      c.root.setEnabled(true);
+      c.idle?.start(true);
+      c.animState = 'idle';
+      applyCow(c);
+    }
+    /** 特效：靠近店面側炸開（玩家看得到）+ 畫面震動 + 音效 */
+    spawnExplosion(CONFIG.pasture2.cx + CONFIG.pasture2.halfX - 4, 1.5, -4);
+    spawnExplosion(-11, 1.5, -6);
+    camShake = 1;
+    sound.boom();
+  }
+
+  /** 切換狗的動畫（idle/walk），只在改變時切換 */
+  function setDogAnim(dog: Dog, state: 'idle' | 'walk') {
+    if (dog.animState === state) return;
+    dog.animState = state;
+    dog.idle?.stop();
+    dog.walk?.stop();
+    if (state === 'walk') dog.walk?.start(true);
+    else dog.idle?.start(true);
+  }
+
+  /** 召喚一隻牧羊犬（從 dogFleet 複製一份帶動畫的副本） */
+  function spawnDog() {
+    if (!dogFleet) return;
+    const ent = dogFleet.container.instantiateModelsToScene((n) => `dog${dogs.length}_${n}`, false);
+    const holder = new TransformNode(`dog${dogs.length}`, scene);
+    (ent.rootNodes[0] as TransformNode).parent = holder;
+    holder.scaling.setAll(dogFleet.scale);
+    ent.rootNodes.forEach((n) => (n as TransformNode).getChildMeshes?.().forEach((m) => (m.isPickable = false)));
+    const g = ent.animationGroups;
+    g.forEach((ag) => ag.stop());
+    const walk = g.find((ag) => /^walk$/i.test(ag.name)) ?? g.find((ag) => /walk|run/i.test(ag.name));
+    const idle = g.find((ag) => /^idle$/i.test(ag.name)) ?? g.find((ag) => /idle/i.test(ag.name)) ?? g[0];
+    /** 從攤位旁出生 */
+    const sx = CONFIG.counter.x + 2;
+    const sz = CONFIG.counter.z - 2;
+    holder.position.set(sx, dogFleet.yOffset, sz);
+    idle?.start(true);
+    dogs.push({
+      root: holder,
+      idle,
+      walk,
+      animState: 'idle',
+      baseScale: dogFleet.scale,
+      yOffset: dogFleet.yOffset,
+      x: sx,
+      z: sz,
+      state: 'seek',
+      target: null,
+      carrying: false,
+    });
+  }
+
+  /** 狗 AI：seek＝找最近的地上肉並走過去撿；deliver＝把肉叼回攤位上架 */
+  function updateDogs(dt: number) {
+    if (!dogs.length) return;
+    const speed = CONFIG.dog.speed;
+    const pr2 = CONFIG.dog.pickRadius * CONFIG.dog.pickRadius;
+    /** 攤位前的放肉點 */
+    const depotX = CONFIG.counter.x;
+    const depotZ = CONFIG.counter.z - 1.6;
+    for (const dog of dogs) {
+      let tx = dog.x;
+      let tz = dog.z;
+      if (dog.state === 'seek') {
+        /** 目標若已被撿走（玩家或別隻狗），重找 */
+        if (!dog.target || !dog.target.active) {
+          dog.target = null;
+          let bd = Infinity;
+          for (const dr of drops) {
+            if (!dr.active) continue;
+            const q = (dr.x - dog.x) ** 2 + (dr.z - dog.z) ** 2;
+            if (q < bd) {
+              bd = q;
+              dog.target = dr;
+            }
+          }
+        }
+        if (dog.target) {
+          tx = dog.target.x;
+          tz = dog.target.z;
+          if ((tx - dog.x) ** 2 + (tz - dog.z) ** 2 < pr2) {
+            dog.target.active = false;
+            dog.target = null;
+            dog.carrying = true;
+            dog.state = 'deliver';
+            sound.pickup();
+          }
+        } else {
+          /** 沒肉可撿：在攤位旁待命 */
+          tx = depotX + 2.2;
+          tz = depotZ;
+        }
+      } else {
+        tx = depotX;
+        tz = depotZ;
+        if ((tx - dog.x) ** 2 + (tz - dog.z) ** 2 < pr2 * 2) {
+          counterMeat++;
+          dog.carrying = false;
+          dog.state = 'seek';
+          meatFly.spawn(dog.x, 1.0, dog.z, CONFIG.counter.x + (Math.random() - 0.5) * 1.2, COUNTER_TOP_Y + 0.4, CONFIG.counter.z + (Math.random() - 0.5) * 0.6);
+          sound.place();
+        }
+      }
+      const dx = tx - dog.x;
+      const dz = tz - dog.z;
+      const d = Math.hypot(dx, dz);
+      const mv = d > 0.06;
+      if (mv) {
+        const step = Math.min(d, speed * dt);
+        dog.x += (dx / d) * step;
+        dog.z += (dz / d) * step;
+        dog.root.rotation.y = Math.atan2(dx, dz);
+      }
+      dog.root.position.set(dog.x, dog.yOffset, dog.z);
+      setDogAnim(dog, mv ? 'walk' : 'idle');
+    }
+  }
+
   /** 玩家背後（面向反方向）約胸高的位置 */
   function playerBack(): [number, number, number] {
     const yaw = player.rotation.y;
-    return [player.position.x - Math.sin(yaw) * 1.0, 1.5, player.position.z - Math.cos(yaw) * 1.0];
+    const back = 1.0 * PLAYER_SCALE;
+    return [player.position.x - Math.sin(yaw) * back, 1.5 * PLAYER_SCALE, player.position.z - Math.cos(yaw) * back];
   }
   /** 收錢：金條從收銀台飛向玩家背後 */
   function spawnCollectFly() {
@@ -1273,14 +1618,32 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       for (const d of drops) if (d.active) pos.push(new Vector3(d.x, 0.18, d.z));
       dropStack.layout(pos);
     }
+    if (dogMeatStack) {
+      const pos: Vector3[] = [];
+      for (const dog of dogs) {
+        if (!dog.carrying) continue;
+        /** 叼在嘴前（面向前方一點、約嘴高） */
+        pos.push(new Vector3(dog.x + Math.sin(dog.root.rotation.y) * 0.6, 0.7, dog.z + Math.cos(dog.root.rotation.y) * 0.6));
+      }
+      dogMeatStack.layout(pos);
+    }
     if (custMeatStack) {
       const pos: Vector3[] = [];
-      for (const c of customers) if (c.root.isEnabled() && c.hasMeat) pos.push(new Vector3(c.root.position.x, 1.15, c.root.position.z + 0.35));
+      for (const c of customers) {
+        if (!c.root.isEnabled() || c.meatCount <= 0) continue;
+        /** 沿顧客面向的前方捧著（往前移、離開臉部），多片往上疊 */
+        const fx = Math.sin(c.root.rotation.y);
+        const fz = Math.cos(c.root.rotation.y);
+        const forward = 0.7;
+        for (let k = 0; k < c.meatCount; k++) {
+          pos.push(new Vector3(c.root.position.x + fx * forward, 0.95 + k * 0.17, c.root.position.z + fz * forward));
+        }
+      }
       custMeatStack.layout(pos);
     }
   }
 
-  /** 把玩家限制在「店面 ∪ 牧場 ∪ 連通走廊」範圍內 */
+  /** 把玩家限制在「店面 ∪ 牧場 ∪ 連通走廊（含解鎖後的牧場2）」範圍內 */
   function clampPlayer(p: Vector3) {
     const a = CONFIG.arenaHalf;
     const inShop = p.x >= -a + 1 && p.x <= a - 1 && p.z >= -a + 1 && p.z <= a - 1;
@@ -1291,7 +1654,17 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       p.x <= P.cx + P.halfX - 0.8 &&
       p.z >= P.cz - P.halfZ + 0.8 &&
       p.z <= P.cz + P.halfZ - 0.8;
-    if (inShop || inCorridor || inPasture) return;
+    /** 牧場2 與西側走道：買炸藥解鎖後才開放 */
+    const P2 = CONFIG.pasture2;
+    const inWestCorridor =
+      pasture2Unlocked && p.x <= -a + 2 && p.x >= P2.cx + P2.halfX - 1.2 && p.z <= -4 && p.z >= -10;
+    const inPasture2 =
+      pasture2Unlocked &&
+      p.x >= P2.cx - P2.halfX + 0.8 &&
+      p.x <= P2.cx + P2.halfX - 0.8 &&
+      p.z >= P2.cz - P2.halfZ + 0.8 &&
+      p.z <= P2.cz + P2.halfZ - 0.8;
+    if (inShop || inCorridor || inPasture || inWestCorridor || inPasture2) return;
     /** 超出則夾回店面範圍（最常見） */
     p.x = Math.max(-a + 1, Math.min(a - 1, p.x));
     p.z = Math.max(-a + 1, Math.min(a - 1, p.z));
@@ -1310,6 +1683,8 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       backStack.mesh.dispose();
       goldStack.mesh.dispose();
       treeField?.dispose();
+      dynamiteStation.dispose();
+      pasture2Holder.dispose();
       bloodDecals.dispose();
       playerBar.dispose();
       goldFly.dispose();
@@ -1324,11 +1699,14 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         c.bubble.dispose();
       });
       custContainers.forEach((cc) => cc.dispose());
+      dogs.forEach((d) => d.root.dispose());
+      dogStation.dispose();
       weaponStations.forEach((ws) => ws.dispose());
       counterStack?.dispose();
       cashStack?.dispose();
       custMeatStack?.dispose();
       dropStack?.dispose();
+      dogMeatStack?.dispose();
       scene.dispose();
       engine.dispose();
     },
@@ -1354,6 +1732,9 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     setTreeCount(v: number) {
       treeVisible = Math.max(0, Math.min(TREE_MAX, Math.round(v)));
       applyTreeCount();
+    },
+    setMoney(v: number) {
+      money = Math.max(0, v);
     },
   };
 }
@@ -1408,8 +1789,28 @@ function buildTable(scene: Scene, wood: StandardMaterial, x: number, z: number) 
   }
 }
 
-/** 一段柵欄（柱 + 橫桿）；horizontal = 沿 x 方向 */
-function fenceSeg(scene: Scene, mat: StandardMaterial, x: number, z: number, horizontal: boolean, seg: number) {
+/**
+ * 一段柵欄；horizontal = 沿 x 方向。parent 可掛在節點上一起開關。
+ * 有 center 模型時用 Fence_Center 實例（沿 x，垂直牆轉 90°）；否則 fallback 程序化柱+橫桿。
+ */
+function fenceSeg(
+  scene: Scene,
+  center: Mesh | null,
+  mat: StandardMaterial,
+  x: number,
+  z: number,
+  horizontal: boolean,
+  seg: number,
+  parent?: TransformNode,
+) {
+  if (center) {
+    const inst = center.createInstance('fence');
+    inst.isPickable = false;
+    inst.position.set(x, 0, z);
+    inst.rotation.y = horizontal ? 0 : Math.PI / 2; // Center 預設沿 X；垂直牆轉 90°
+    if (parent) inst.parent = parent;
+    return;
+  }
   const postH = 1.4;
   const post = MeshBuilder.CreateBox('fence-post', { width: 0.18, height: postH, depth: 0.18 }, scene);
   post.material = mat;
@@ -1423,35 +1824,55 @@ function fenceSeg(scene: Scene, mat: StandardMaterial, x: number, z: number, hor
   rail.material = mat;
   rail.position.set(x, postH * 0.62, z);
   rail.isPickable = false;
+  if (parent) {
+    post.parent = parent;
+    rail.parent = parent;
+  }
 }
 
-/** 店面圍場：+z 前方留客人大門、-z 後方留牧場通道（皆在 x≈0） */
-function buildShopFence(scene: Scene, wood: StandardMaterial, half = CONFIG.arenaHalf) {
+/** 店面圍場：+z 前門、-z 後門（往牧場1）、-x 西側左上留缺口（往牧場2 走道） */
+function buildShopFence(scene: Scene, center: Mesh | null, wood: StandardMaterial, half = CONFIG.arenaHalf) {
   const seg = 2;
   for (let p = -half; p <= half; p += seg) {
-    if (!(Math.abs(p) < 3)) fenceSeg(scene, wood, p, half, true, seg); // 前門缺口
-    if (!(Math.abs(p) < 3)) fenceSeg(scene, wood, p, -half, true, seg); // 後門（往牧場）缺口
-    fenceSeg(scene, wood, -half, p, false, seg);
-    fenceSeg(scene, wood, half, p, false, seg);
+    if (!(Math.abs(p) < 3)) fenceSeg(scene, center, wood, p, half, true, seg); // 前門缺口
+    if (!(Math.abs(p) < 3)) fenceSeg(scene, center, wood, p, -half, true, seg); // 後門（往牧場1）缺口
+    if (!(p <= -half + 4)) fenceSeg(scene, center, wood, -half, p, false, seg); // 西牆左上缺口（往牧場2）
+    fenceSeg(scene, center, wood, half, p, false, seg);
   }
 }
 
-/** 牧場圍場：南側（z 最大、靠店面）留通道對齊店面後門 */
-function buildPastureFence(scene: Scene, wood: StandardMaterial) {
-  const { cx, cz, halfX, halfZ } = CONFIG.pasture;
+/** 牧場缺口設定：在某面牆（以中心座標 center、半寬 half）留通道 */
+interface FenceGap {
+  side: 'north' | 'south' | 'east' | 'west';
+  center: number;
+  half: number;
+}
+
+/** 牧場圍場（通用）：可指定區域、缺口、掛載節點（牧場2 掛 holder 以便整片開關） */
+function buildPastureFence(
+  scene: Scene,
+  center: Mesh | null,
+  wood: StandardMaterial,
+  region: Region,
+  gaps: FenceGap[] = [],
+  parent?: TransformNode,
+) {
+  const { cx, cz, halfX, halfZ } = region;
   const seg = 2;
+  const gapAt = (side: FenceGap['side'], coord: number) =>
+    gaps.some((g) => g.side === side && Math.abs(coord - g.center) < g.half);
   for (let x = cx - halfX; x <= cx + halfX; x += seg) {
-    fenceSeg(scene, wood, x, cz - halfZ, true, seg); // 北邊（外側）
-    if (!(Math.abs(x - cx) < 3)) fenceSeg(scene, wood, x, cz + halfZ, true, seg); // 南邊留通道
+    if (!gapAt('north', x)) fenceSeg(scene, center, wood, x, cz - halfZ, true, seg, parent);
+    if (!gapAt('south', x)) fenceSeg(scene, center, wood, x, cz + halfZ, true, seg, parent);
   }
   for (let z = cz - halfZ; z <= cz + halfZ; z += seg) {
-    fenceSeg(scene, wood, cx - halfX, z, false, seg);
-    fenceSeg(scene, wood, cx + halfX, z, false, seg);
+    if (!gapAt('west', z)) fenceSeg(scene, center, wood, cx - halfX, z, false, seg, parent);
+    if (!gapAt('east', z)) fenceSeg(scene, center, wood, cx + halfX, z, false, seg, parent);
   }
 }
 
-/** 浮空文字招牌 */
-function makeSign(scene: Scene, text: string, x: number, y: number, z: number) {
+/** 浮空文字招牌；回傳 plane 以便掛到節點上一起開關 */
+function makeSign(scene: Scene, text: string, x: number, y: number, z: number): Mesh {
   const plane = MeshBuilder.CreatePlane('sign', { width: 2.6, height: 0.8 }, scene);
   plane.position.set(x, y, z);
   plane.isPickable = false;
@@ -1479,6 +1900,7 @@ function makeSign(scene: Scene, text: string, x: number, y: number, z: number) {
   mat.useAlphaFromDiffuseTexture = true;
   mat.backFaceCulling = false;
   plane.material = mat;
+  return plane;
 }
 
 /** 地面觸發墊 */
@@ -1695,6 +2117,95 @@ class WeaponStation {
       ctx.fillStyle = '#ffd24a';
       ctx.fillText(`💰${this.def.cost}`, W / 2, 162);
       /** 進度條（左→右填綠） */
+      const ix = 34;
+      const iy = 200;
+      const iw = W - 68;
+      const ih = 38;
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      roundRect(ctx, ix, iy, iw, ih, 14);
+      ctx.fill();
+      if (this.progress > 0.01) {
+        ctx.fillStyle = 'rgba(90,220,120,0.95)';
+        roundRect(ctx, ix, iy, Math.max(14, iw * this.progress), ih, 14);
+        ctx.fill();
+      }
+    }
+    this.tex.hasAlpha = true;
+    this.tex.update();
+  }
+}
+
+/** 通用購買框：地面白框＋emoji＋價格＋付款進度條，付滿後顯示完成字樣（炸藥／狗等共用） */
+class BuyStation {
+  private tex: DynamicTexture;
+  private progress = 0;
+  private done = false;
+  private lastDraw = -2;
+
+  constructor(
+    scene: Scene,
+    x: number,
+    z: number,
+    private cost: number,
+    private emoji: string,
+    private doneText: string,
+  ) {
+    const ground = MeshBuilder.CreateGround('dyn-zone', { width: 3.0, height: 3.0 }, scene);
+    ground.position.set(x, 0.06, z);
+    /** 同武器框：繞 Y 轉 180° 避免貼圖上下顛倒 */
+    ground.rotation.y = Math.PI;
+    ground.isPickable = false;
+    this.tex = new DynamicTexture('dyn-zone-tex', { width: 256, height: 256 }, scene, false);
+    const mat = new StandardMaterial('dyn-zone-mat', scene);
+    mat.diffuseTexture = this.tex;
+    mat.emissiveTexture = this.tex;
+    mat.emissiveColor = new Color3(1, 1, 1);
+    mat.diffuseColor = Color3.Black();
+    mat.specularColor = Color3.Black();
+    mat.disableLighting = true;
+    mat.useAlphaFromDiffuseTexture = true;
+    mat.backFaceCulling = false;
+    ground.material = mat;
+    this.redraw();
+  }
+
+  setProgress(r: number) {
+    this.progress = Math.max(0, Math.min(1, r));
+    if (Math.abs(this.progress - this.lastDraw) >= 0.02 || this.progress >= 1) this.redraw();
+  }
+  setDone() {
+    if (this.done) return;
+    this.done = true;
+    this.progress = 1;
+    this.redraw();
+  }
+  dispose() {
+    this.tex.dispose();
+  }
+
+  private redraw() {
+    this.lastDraw = this.progress;
+    const ctx = this.tex.getContext() as CanvasRenderingContext2D;
+    const W = 256;
+    ctx.clearRect(0, 0, W, W);
+    roundRect(ctx, 8, 8, W - 16, W - 16, 28);
+    ctx.fillStyle = this.done ? 'rgba(22,90,50,0.82)' : 'rgba(46,24,18,0.8)';
+    ctx.fill();
+    ctx.lineWidth = 12;
+    ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+    ctx.stroke();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '104px sans-serif';
+    ctx.fillText(this.emoji, W / 2, 84);
+    if (this.done) {
+      ctx.font = 'bold 36px sans-serif';
+      ctx.fillStyle = '#9af0b0';
+      ctx.fillText(this.doneText, W / 2, 178);
+    } else {
+      ctx.font = 'bold 54px sans-serif';
+      ctx.fillStyle = '#ffd24a';
+      ctx.fillText(`💰${this.cost}`, W / 2, 162);
       const ix = 34;
       const iy = 200;
       const iw = W - 68;

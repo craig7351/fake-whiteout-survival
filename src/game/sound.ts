@@ -93,4 +93,10 @@ export const sound = {
   denied() {
     blip(180, 0.12, 'sawtooth', 0.18, 120);
   },
+  /** 爆炸：低頻轟然 + 碎裂噪聲（炸開牧場2） */
+  boom() {
+    blip(90, 0.5, 'sawtooth', 0.5, 38);
+    blip(150, 0.35, 'square', 0.32, 60);
+    setTimeout(() => blip(70, 0.45, 'sawtooth', 0.35, 28), 70);
+  },
 };

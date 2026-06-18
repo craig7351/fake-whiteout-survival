@@ -21,8 +21,13 @@ export interface TreePlacement {
  */
 export class TreeField {
   private meshes: Mesh[];
+  private buffers: Float32Array[];
+  /** 每棵樹在其來源 mesh buffer 中的位置與世界座標（供區域清除使用） */
+  private items: { mesh: number; local: number; x: number; z: number }[] = [];
   /** 每個全域索引（生成順序）對應到哪個來源 mesh，用來換算各 mesh 的可見前綴長度 */
   private meshSeq: number[] = [];
+  /** 退化（零縮放）矩陣：寫入即讓該棵樹不顯示 */
+  private readonly hiddenMat = new Float32Array(16);
   readonly total: number;
 
   constructor(sources: Mesh[], placements: TreePlacement[]) {
@@ -32,7 +37,7 @@ export class TreeField {
     /** 各來源 mesh 各分到幾棵 → 配置對應大小的矩陣 buffer */
     const counts = sources.map(() => 0);
     for (const p of placements) counts[p.mesh]++;
-    const buffers = counts.map((c) => new Float32Array(c * 16));
+    this.buffers = counts.map((c) => new Float32Array(c * 16));
     const writeIdx = counts.map(() => 0);
 
     const mat = new Matrix();
@@ -44,17 +49,23 @@ export class TreeField {
       scl.set(p.scale, p.scale, p.scale);
       pos.set(p.x, 0, p.z);
       Matrix.ComposeToRef(scl, rot, pos, mat);
-      mat.copyToArray(buffers[p.mesh], writeIdx[p.mesh] * 16);
+      const local = writeIdx[p.mesh];
+      mat.copyToArray(this.buffers[p.mesh], local * 16);
       writeIdx[p.mesh]++;
+      this.items.push({ mesh: p.mesh, local, x: p.x, z: p.z });
       this.meshSeq.push(p.mesh);
     }
+
+    /** 退化矩陣＝零縮放（與位置無關，整棵塌成一點 → 不顯示） */
+    Matrix.ComposeToRef(Vector3.ZeroReadOnly, Quaternion.Identity(), Vector3.ZeroReadOnly, mat);
+    mat.copyToArray(this.hiddenMat, 0);
 
     sources.forEach((src, i) => {
       src.isVisible = true;
       src.isPickable = false;
       /** 樹林橫跨整張地圖：停用視錐剔除直接整片渲染（thin-instance 共用一個包圍盒，避免誤剔） */
       src.alwaysSelectAsActiveMesh = true;
-      src.thinInstanceSetBuffer('matrix', buffers[i], 16, true);
+      src.thinInstanceSetBuffer('matrix', this.buffers[i], 16, false);
       src.thinInstanceCount = counts[i];
     });
   }
@@ -65,6 +76,18 @@ export class TreeField {
     const counts = this.meshes.map(() => 0);
     for (let g = 0; g < N; g++) counts[this.meshSeq[g]]++;
     this.meshes.forEach((src, i) => (src.thinInstanceCount = counts[i]));
+  }
+
+  /** 清掉矩形區域內的所有樹（寫入退化矩陣）。用於「炸開樹林」露出新區域。 */
+  hideRegion(minX: number, maxX: number, minZ: number, maxZ: number) {
+    const dirty = new Set<number>();
+    for (const it of this.items) {
+      if (it.x >= minX && it.x <= maxX && it.z >= minZ && it.z <= maxZ) {
+        this.buffers[it.mesh].set(this.hiddenMat, it.local * 16);
+        dirty.add(it.mesh);
+      }
+    }
+    dirty.forEach((mi) => this.meshes[mi].thinInstanceBufferUpdated('matrix'));
   }
 
   dispose() {

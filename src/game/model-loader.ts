@@ -8,6 +8,10 @@ export interface AnimatedModel {
   walk?: AnimationGroup;
   /** 攻擊動畫（揮刀時播放）：優先武器揮砍/突刺/射擊，其次拳擊/咬 */
   attack?: AnimationGroup;
+  /** 持槍/射擊姿勢動畫（裝備槍時使用） */
+  shoot?: AnimationGroup;
+  /** 模型自帶的武器節點（如 SMG）；近戰時隱藏、裝備槍時顯示 */
+  builtinWeapon?: TransformNode;
 }
 
 /**
@@ -26,12 +30,20 @@ export async function loadCharacter(
 
     const groups = result.animationGroups;
     groups.forEach((g) => g.stop());
-    const walk = groups.find((g) => /walk|run|move|sprint/i.test(g.name));
-    const idle = groups.find((g) => /idle/i.test(g.name)) ?? groups[0];
-    /** 攻擊動畫：優先 slash/stab/shoot，其次 punch/bite/attack */
+    /** 走路：優先精確的 Walk，其次 Run/移動類（避免選到 Walk_Gun / Run_Slash 等變體） */
+    const walk =
+      groups.find((g) => /^walk$/i.test(g.name)) ??
+      groups.find((g) => /^run$/i.test(g.name)) ??
+      groups.find((g) => /walk|run|move|sprint/i.test(g.name));
+    const idle = groups.find((g) => /^idle$/i.test(g.name)) ?? groups.find((g) => /idle/i.test(g.name)) ?? groups[0];
+    /** 攻擊：優先精確 Slash/Stab，其次未帶 run/walk 前綴的 slash/stab/shoot，最後 punch/attack */
     const attack =
-      groups.find((g) => /^slash$|^stab$|slash|stab|shoot|gunplay/i.test(g.name)) ??
+      groups.find((g) => /^(slash|stab|attack|melee)$/i.test(g.name)) ??
+      groups.find((g) => /slash|stab|shoot|gunplay/i.test(g.name) && !/run|walk|jump/i.test(g.name)) ??
       groups.find((g) => /punch|bite|attack|melee/i.test(g.name));
+    /** 持槍/射擊姿勢：優先 Idle_Gun / Shoot / Fire，其次任何含 gun 的動畫 */
+    const shoot =
+      groups.find((g) => /idle_gun|^shoot$|fire/i.test(g.name)) ?? groups.find((g) => /gun/i.test(g.name) && !/run|walk/i.test(g.name));
     idle?.start(true);
 
     const { min, max } = root.getHierarchyBoundingVectors();
@@ -43,7 +55,11 @@ export async function loadCharacter(
     root.position.y = -min.y * scale;
 
     result.meshes.forEach((m) => (m.isPickable = false));
-    return { root, idle, walk, attack };
+    /** 模型自帶武器節點（如 SMG）：供呼叫端依裝備切換顯示/隱藏 */
+    const builtinWeapon = [...result.meshes, ...result.transformNodes].find((n) =>
+      /smg|weapon|gun|rifle|pistol/i.test(n.name),
+    ) as TransformNode | undefined;
+    return { root, idle, walk, attack, shoot, builtinWeapon };
   } catch (error) {
     console.warn('[loadCharacter] 載入失敗，改用程序化造型：', path, error);
     return null;
