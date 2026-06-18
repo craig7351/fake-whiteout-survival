@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="32%" r="80%">
+      <stop offset="0%" stop-color="#cfe0f2"/>
+      <stop offset="100%" stop-color="#7e9ec4"/>
+    </radialGradient>
+    <linearGradient id="fur" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#dde7f2"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+  <!-- 北極熊耳朵 -->
+  <circle cx="20" cy="20" r="8" fill="url(#fur)" stroke="#9fb2c8" stroke-width="1.5"/>
+  <circle cx="44" cy="20" r="8" fill="url(#fur)" stroke="#9fb2c8" stroke-width="1.5"/>
+  <!-- 熊頭 -->
+  <path d="M14 32 q0 -14 18 -14 q18 0 18 14 q0 16 -18 18 q-18 -2 -18 -18 Z" fill="url(#fur)" stroke="#9fb2c8" stroke-width="1.5"/>
+  <!-- 眼睛 -->
+  <circle cx="25" cy="31" r="2.6" fill="#23303f"/>
+  <circle cx="39" cy="31" r="2.6" fill="#23303f"/>
+  <!-- 口鼻 -->
+  <ellipse cx="32" cy="40" rx="8" ry="6" fill="#eef4fb"/>
+  <ellipse cx="32" cy="37" rx="3.2" ry="2.4" fill="#23303f"/>
+  <path d="M32 39 l0 4 M32 43 q-3 2 -5 0 M32 43 q3 2 5 0" stroke="#23303f" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+  <!-- 一塊肉（紅白） -->
+  <ellipse cx="50" cy="50" rx="9" ry="6" fill="#e5677a" stroke="#b23b50" stroke-width="1.4"/>
+  <circle cx="56" cy="50" r="2.4" fill="#fff" stroke="#b23b50" stroke-width="1"/>
+</svg>
