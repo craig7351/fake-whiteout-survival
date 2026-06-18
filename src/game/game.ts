@@ -20,6 +20,7 @@ import {
 import { createTerrain } from './terrain';
 import { loadCharacter, loadProp, loadAnimatedFleet, type AnimatedModel } from './model-loader';
 import { BackStack } from './back-stack';
+import { TreeField, type TreePlacement } from './tree-field';
 import { BloodDecals } from './decals';
 import { HpBar } from './hp-bar';
 import { Bubble } from './bubble';
@@ -85,6 +86,8 @@ export interface GameHandle {
   setCameraRadius: (v: number) => void;
   /** Debug：鏡頭旋轉角度（弧度 alpha） */
   setCameraAlpha: (v: number) => void;
+  /** Debug：地圖樹木顯示數量 */
+  setTreeCount: (v: number) => void;
 }
 
 /** 一池同源 InstancedMesh，依傳入的位置陣列顯示前 N 個（其餘隱藏） */
@@ -419,6 +422,14 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   /** ===== 地圖空白處種滿樹木與草（純裝飾，非阻塞載入） ===== */
   void scatterNature();
 
+  /** 樹林（thin-instance）：佈滿 TREE_MAX 個固定佈點，依 treeVisible 顯示前 N 棵（debug 可調） */
+  let treeField: TreeField | null = null;
+  const TREE_MAX = 2000;
+  let treeVisible = 2000;
+  function applyTreeCount() {
+    treeField?.setCount(treeVisible);
+  }
+
   /** 該點是否為「可種樹的空地」（避開店面、牧場、顧客動線） */
   function isClearForDecor(x: number, z: number): boolean {
     const a = CONFIG.arenaHalf;
@@ -440,16 +451,16 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     const grass = [gB, gC, gD].filter((m): m is Mesh => !!m);
     const trees = [tA, tB, tC].filter((m): m is Mesh => !!m);
     grass.forEach((m) => (m.isVisible = false));
-    trees.forEach((m) => (m.isVisible = false));
     const RANGE = CONFIG.arenaHalf * 3.6; // 散布半徑（落在地面範圍內）
-    const place = (sources: Mesh[], count: number, minS: number, maxS: number) => {
+
+    /** 草：數量少，用 InstancedMesh 即可（均勻隨機大小） */
+    const placeGrass = (sources: Mesh[], count: number, minS: number, maxS: number) => {
       if (!sources.length) return;
-      let placed = 0;
-      for (let tries = 0; placed < count && tries < count * 10; tries++) {
+      for (let tries = 0, placed = 0; placed < count && tries < count * 10; tries++) {
         const x = (Math.random() * 2 - 1) * RANGE;
         const z = (Math.random() * 2 - 1) * RANGE;
         if (!isClearForDecor(x, z)) continue;
-        const inst = sources[(Math.random() * sources.length) | 0].createInstance('deco');
+        const inst = sources[(Math.random() * sources.length) | 0].createInstance('grass');
         inst.isPickable = false;
         inst.position.set(x, 0, z);
         inst.rotation.y = Math.random() * Math.PI * 2;
@@ -457,8 +468,30 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         placed++;
       }
     };
-    place(trees, 110, 0.8, 1.45);
-    place(grass, 240, 0.7, 1.5);
+    placeGrass(grass, 240, 0.7, 1.5);
+
+    /**
+     * 樹：數量大 → thin-instance。產生 TREE_MAX 個固定佈點，交給 TreeField 一次畫完。
+     * 尺寸 80%~150% 偏態分布（skew=2.2）：多數中小、偶爾出現明顯較大的巨木。
+     */
+    if (trees.length) {
+      const placements: TreePlacement[] = [];
+      for (let tries = 0; placements.length < TREE_MAX && tries < TREE_MAX * 10; tries++) {
+        const x = (Math.random() * 2 - 1) * RANGE;
+        const z = (Math.random() * 2 - 1) * RANGE;
+        if (!isClearForDecor(x, z)) continue;
+        const r = Math.pow(Math.random(), 2.2); // 偏態：壓向小尺寸
+        placements.push({
+          mesh: (Math.random() * trees.length) | 0,
+          x,
+          z,
+          rotY: Math.random() * Math.PI * 2,
+          scale: 0.8 + r * (1.5 - 0.8),
+        });
+      }
+      treeField = new TreeField(trees, placements);
+      applyTreeCount();
+    }
   }
 
   async function initAssets() {
@@ -1276,6 +1309,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       canvas.removeEventListener('pointerdown', firstTouch);
       backStack.mesh.dispose();
       goldStack.mesh.dispose();
+      treeField?.dispose();
       bloodDecals.dispose();
       playerBar.dispose();
       goldFly.dispose();
@@ -1316,6 +1350,10 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     },
     setCameraAlpha(v: number) {
       camera.alpha = v;
+    },
+    setTreeCount(v: number) {
+      treeVisible = Math.max(0, Math.min(TREE_MAX, Math.round(v)));
+      applyTreeCount();
     },
   };
 }
@@ -1590,6 +1628,8 @@ class WeaponStation {
     /** 放大的地面框框：武器圖案 + 價格 + 進度條都畫在框內（不另設浮空牌） */
     const ground = MeshBuilder.CreateGround('wpn-zone', { width: 3.6, height: 3.6 }, scene);
     ground.position.set(def.x, 0.06, def.z);
+    /** 繞 Y 轉 180°：否則從目前相機角度看，框內貼圖（武器圖示／價格／文字）會上下顛倒 */
+    ground.rotation.y = Math.PI;
     ground.isPickable = false;
     this.tex = new DynamicTexture('wpn-zone-tex', { width: 256, height: 256 }, scene, false);
     const gmat = new StandardMaterial('wpn-zone-mat', scene);
