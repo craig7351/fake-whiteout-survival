@@ -255,7 +255,7 @@ interface Dog {
   z: number;
   state: 'seek' | 'deliver'; // 找肉 / 送回攤位
   target: Drop | null;
-  carrying: boolean;
+  carry: number; // 目前背上的肉片數（0~carryMax，背上越疊越高）
 }
 
 export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {}): GameHandle {
@@ -431,6 +431,49 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   const playerBar = new HpBar(scene, 1.8, 0.26);
   playerBar.setEnabled(false);
 
+  /** ===== 打擊特效：命中火花 / 擊殺血花（一次建立、反覆爆發，效能友善） ===== */
+  const sparkTex = new DynamicTexture('spark', { width: 64, height: 64 }, scene, false);
+  {
+    const sc = sparkTex.getContext() as CanvasRenderingContext2D;
+    const grad = sc.createRadialGradient(32, 32, 1, 32, 32, 30);
+    grad.addColorStop(0, 'rgba(255,255,255,1)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    sc.fillStyle = grad;
+    sc.fillRect(0, 0, 64, 64);
+    sparkTex.hasAlpha = true;
+    sparkTex.update();
+  }
+  const makeBurst = (name: string, c1: Color4, c2: Color4, minS: number, maxS: number, life: number, power: number, add: boolean) => {
+    const ps = new ParticleSystem(name, 220, scene);
+    ps.particleTexture = sparkTex;
+    ps.emitter = new Vector3(0, 0, 0);
+    ps.minEmitBox = new Vector3(-0.15, -0.15, -0.15);
+    ps.maxEmitBox = new Vector3(0.15, 0.15, 0.15);
+    ps.color1 = c1;
+    ps.color2 = c2;
+    ps.colorDead = new Color4(c2.r, c2.g, c2.b, 0);
+    ps.minSize = minS;
+    ps.maxSize = maxS;
+    ps.minLifeTime = life * 0.5;
+    ps.maxLifeTime = life;
+    ps.emitRate = 0; // 平時不噴，靠 manualEmitCount 一次性爆發
+    ps.minEmitPower = power * 0.5;
+    ps.maxEmitPower = power;
+    ps.updateSpeed = 0.02;
+    ps.gravity = new Vector3(0, -9, 0);
+    ps.direction1 = new Vector3(-1, 0.6, -1);
+    ps.direction2 = new Vector3(1, 1.5, 1);
+    ps.blendMode = add ? ParticleSystem.BLENDMODE_ADD : ParticleSystem.BLENDMODE_STANDARD;
+    ps.start();
+    return ps;
+  };
+  const hitFx = makeBurst('hitfx', new Color4(1, 0.95, 0.5, 1), new Color4(1, 0.55, 0.1, 1), 0.15, 0.5, 0.32, 6, true);
+  const killFx = makeBurst('killfx', new Color4(0.95, 0.12, 0.12, 1), new Color4(0.45, 0, 0, 1), 0.3, 0.95, 0.6, 8, false);
+  const burstAt = (ps: ParticleSystem, x: number, y: number, z: number, count: number) => {
+    (ps.emitter as Vector3).set(x, y, z);
+    ps.manualEmitCount = count;
+  };
+
   /** ===== 顧客池（模型載入後於 initAssets 建立可動副本） ===== */
   const customers: Customer[] = [];
   let custContainers: AssetContainer[] = [];
@@ -597,8 +640,8 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     meatFly.init(meatSrc);
     /** 掉落的肉大小＝背在身上的肉（BackStack ≈ 1.04，MEAT_SIZE 0.95 → 約 ×1.1） */
     dropStack = new InstanceStack(meatSrc, CONFIG.meatDrop.max, undefined, 1.1);
-    /** 狗叼著的肉（最多 4 隻狗，目前 1 隻） */
-    dogMeatStack = new InstanceStack(meatSrc, 4, undefined, 1.0);
+    /** 狗背上的肉堆（一隻狗最多背 carryMax 片，越疊越高） */
+    dogMeatStack = new InstanceStack(meatSrc, CONFIG.dog.carryMax, undefined, 1.0);
 
     /** 建立牛群：每頭牛各 instantiate 一份帶骨骼動畫的副本 */
     if (cowFleet) {
@@ -1038,16 +1081,18 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
             c.respawn = CONFIG.cow.respawnSec;
             c.bar.setEnabled(false);
             bloodDecals.spawn(c.x, c.z);
+            burstAt(killFx, c.x, 1.0, c.z, 26); // 擊殺血花
             for (let k = 0; k < c.meatYield; k++) {
               spawnDrop(c.x + (Math.random() - 0.5) * 1.2, c.z + (Math.random() - 0.5) * 1.2);
             }
             anyKill = true;
           } else {
+            burstAt(hitFx, c.x, 1.2, c.z, 14); // 命中火花
             anyHit = true;
           }
         }
         if (anyKill) sound.kill();
-        else if (anyHit && !wpn.ranged) sound.hit();
+        else if (anyHit && !wpn.ranged) sound.hit(); // 近戰命中打擊聲（槍靠 shoot() 已有回饋，避免連發吵雜）
       }
     }
     /** 攻擊時若沒在移動，讓玩家面向目標 */
@@ -1509,7 +1554,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       z: sz,
       state: 'seek',
       target: null,
-      carrying: false,
+      carry: 0,
     });
   }
 
@@ -1525,7 +1570,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       let tx = dog.x;
       let tz = dog.z;
       if (dog.state === 'seek') {
-        /** 目標若已被撿走（玩家或別隻狗），重找 */
+        /** 目標若已被撿走（玩家或別隻狗），重找最近的 */
         if (!dog.target || !dog.target.active) {
           dog.target = null;
           let bd = Infinity;
@@ -1544,12 +1589,16 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
           if ((tx - dog.x) ** 2 + (tz - dog.z) ** 2 < pr2) {
             dog.target.active = false;
             dog.target = null;
-            dog.carrying = true;
-            dog.state = 'deliver';
+            dog.carry++; // 撿一片疊到背上
             sound.pickup();
+            /** 背滿 carryMax 就送回攤位 */
+            if (dog.carry >= CONFIG.dog.carryMax) dog.state = 'deliver';
           }
+        } else if (dog.carry > 0) {
+          /** 沒肉可撿了、但背上有貨：先送回攤位 */
+          dog.state = 'deliver';
         } else {
-          /** 沒肉可撿：在攤位旁待命 */
+          /** 空手又沒肉：在攤位旁待命 */
           tx = depotX + 2.2;
           tz = depotZ;
         }
@@ -1557,10 +1606,21 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         tx = depotX;
         tz = depotZ;
         if ((tx - dog.x) ** 2 + (tz - dog.z) ** 2 < pr2 * 2) {
-          counterMeat++;
-          dog.carrying = false;
+          /** 把整背的肉一次上架（飛行動畫取樣幾片即可，避免一次噴上百個） */
+          counterMeat += dog.carry;
+          const flies = Math.min(dog.carry, 8);
+          for (let k = 0; k < flies; k++) {
+            meatFly.spawn(
+              dog.x,
+              1.0 + k * 0.2,
+              dog.z,
+              CONFIG.counter.x + (Math.random() - 0.5) * 1.2,
+              COUNTER_TOP_Y + 0.4,
+              CONFIG.counter.z + (Math.random() - 0.5) * 0.6,
+            );
+          }
+          dog.carry = 0;
           dog.state = 'seek';
-          meatFly.spawn(dog.x, 1.0, dog.z, CONFIG.counter.x + (Math.random() - 0.5) * 1.2, COUNTER_TOP_Y + 0.4, CONFIG.counter.z + (Math.random() - 0.5) * 0.6);
           sound.place();
         }
       }
@@ -1621,9 +1681,14 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     if (dogMeatStack) {
       const pos: Vector3[] = [];
       for (const dog of dogs) {
-        if (!dog.carrying) continue;
-        /** 叼在嘴前（面向前方一點、約嘴高） */
-        pos.push(new Vector3(dog.x + Math.sin(dog.root.rotation.y) * 0.6, 0.7, dog.z + Math.cos(dog.root.rotation.y) * 0.6));
+        if (dog.carry <= 0) continue;
+        /** 疊在背上（往後一點），數量越多疊越高（同玩家背肉） */
+        const yaw = dog.root.rotation.y;
+        const bx = dog.x - Math.sin(yaw) * 0.15;
+        const bz = dog.z - Math.cos(yaw) * 0.15;
+        for (let k = 0; k < dog.carry; k++) {
+          pos.push(new Vector3(bx, dog.yOffset + 0.7 + k * CONFIG.dog.carryStep, bz));
+        }
       }
       dogMeatStack.layout(pos);
     }
@@ -1701,6 +1766,9 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       custContainers.forEach((cc) => cc.dispose());
       dogs.forEach((d) => d.root.dispose());
       dogStation.dispose();
+      hitFx.dispose();
+      killFx.dispose();
+      sparkTex.dispose();
       weaponStations.forEach((ws) => ws.dispose());
       counterStack?.dispose();
       cashStack?.dispose();

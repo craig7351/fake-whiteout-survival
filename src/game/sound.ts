@@ -40,6 +40,29 @@ function blip(freq: number, dur: number, type: OscillatorType = 'sine', vol = 0.
   osc.stop(c.currentTime + dur + 0.02);
 }
 
+/** 一段濾波白噪聲：用於打擊/揮砍的「實體感」（劈、噗、咻） */
+function noise(dur: number, vol: number, type: BiquadFilterType = 'lowpass', freq = 900) {
+  const c = ensure();
+  if (!c || !master) return;
+  const len = Math.max(1, Math.floor(c.sampleRate * dur));
+  const buf = c.createBuffer(1, len, c.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+  const src = c.createBufferSource();
+  src.buffer = buf;
+  const filter = c.createBiquadFilter();
+  filter.type = type;
+  filter.frequency.value = freq;
+  const g = c.createGain();
+  g.gain.setValueAtTime(vol, c.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + dur);
+  src.connect(filter);
+  filter.connect(g);
+  g.connect(master);
+  src.start();
+  src.stop(c.currentTime + dur + 0.02);
+}
+
 export const sound = {
   setMuted(v: boolean) {
     muted = v;
@@ -66,18 +89,21 @@ export const sound = {
     blip(740, 0.06, 'triangle', 0.3, 1100);
     blip(1180, 0.08, 'sine', 0.2, 1480);
   },
-  /** 揮刀打到牛：短促打擊聲 */
+  /** 揮刀打到牛：短促打擊聲 + 肉感悶噗 */
   hit() {
     blip(220, 0.06, 'square', 0.16, 150);
+    noise(0.07, 0.22, 'lowpass', 1300);
   },
-  /** 牛被擊殺：低沉爆裂 */
+  /** 牛被擊殺：低沉爆裂 + 噴濺噗聲 */
   kill() {
-    blip(160, 0.16, 'sawtooth', 0.28, 90);
+    blip(160, 0.16, 'sawtooth', 0.3, 90);
     blip(420, 0.1, 'triangle', 0.18, 260);
+    noise(0.22, 0.32, 'lowpass', 650);
   },
-  /** 近戰揮砍：破風聲 */
+  /** 近戰揮砍：破風聲 + 咻 */
   swing() {
     blip(640, 0.08, 'triangle', 0.12, 240);
+    noise(0.12, 0.12, 'highpass', 1700);
   },
   /** 衝鋒槍射擊：短促槍聲 */
   shoot() {

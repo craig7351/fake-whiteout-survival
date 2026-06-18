@@ -64,6 +64,10 @@ export const CONFIG = {
     speed: 6,
     /** 撿到肉的判定半徑 */
     pickRadius: 1.1,
+    /** 一趟最多背幾片肉（背上會越疊越高，集滿才送回攤位） */
+    carryMax: 100,
+    /** 背上每片肉的疊高間距 */
+    carryStep: 0.16,
   },
 
   /** 牛 */
