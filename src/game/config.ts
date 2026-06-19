@@ -194,6 +194,8 @@ export interface WeaponDef {
   cleave: number;
   /** 是否遠程（衝鋒槍：遠距離掃射） */
   ranged: boolean;
+  /** 是否迴旋斧：斧頭繞玩家旋轉、攻擊範圍內所有怪物 */
+  whirl?: boolean;
   /** 購買價格（0 = 起始免費） */
   cost: number;
   /** 武器框框（地墊）位置 */
@@ -207,15 +209,16 @@ export interface WeaponDef {
 export const WEAPONS: WeaponDef[] = [
   {
     id: 'axe',
-    name: '斧頭',
+    name: '迴旋斧',
     emoji: '🪓',
     model: '/models/weapons/axe.glb',
     size: 1.0,
-    damage: 8,
-    interval: 0.75,
-    range: 2.8,
-    cleave: 1,
+    damage: 4,
+    interval: 0.3,
+    range: 4.0,
+    cleave: 99, // 範圍內所有怪物
     ranged: false,
+    whirl: true,
     cost: 200,
     x: -7,
     z: -4,
@@ -235,7 +238,7 @@ export const WEAPONS: WeaponDef[] = [
     cost: 0,
     x: -7,
     z: 0,
-    hand: { x: 0.32, y: 1.0, z: 0.3, rx: -0.6, ry: 0, rz: 0.1 },
+    hand: { x: 0.32, y: 1.0, z: 0.3, rx: 1.51, ry: 1.76, rz: 1.35 },
   },
   {
     id: 'smg',

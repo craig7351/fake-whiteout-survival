@@ -5,21 +5,31 @@
 let ctx: AudioContext | null = null;
 let muted = false;
 let master: GainNode | null = null;
+let musicGain: GainNode | null = null;
 
-function ensure(): AudioContext | null {
-  if (muted) return null;
+/** 建立/取得 AudioContext（不理會靜音；靜音時 master 增益為 0，仍可排程背景音樂） */
+function ensureCtx(): AudioContext | null {
   if (!ctx) {
     try {
       ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
       master = ctx.createGain();
-      master.gain.value = 0.4;
+      master.gain.value = muted ? 0 : 0.4;
       master.connect(ctx.destination);
+      musicGain = ctx.createGain();
+      musicGain.gain.value = 0.16; // 背景音樂音量（比音效低）
+      musicGain.connect(master);
     } catch {
       return null;
     }
   }
   if (ctx.state === 'suspended') void ctx.resume();
   return ctx;
+}
+
+/** 音效用：靜音時直接跳過 */
+function ensure(): AudioContext | null {
+  if (muted) return null;
+  return ensureCtx();
 }
 
 /** 一個簡單的「啵」音：指定頻率、時長、波形、音量 */
@@ -63,6 +73,67 @@ function noise(dur: number, vol: number, type: BiquadFilterType = 'lowpass', fre
   src.stop(c.currentTime + dur + 0.02);
 }
 
+/* ===== 背景音樂：5 種程序合成循環曲（自帶不需音檔） ===== */
+interface MusicTrack {
+  name: string;
+  bpm: number;
+  bass: OscillatorType;
+  lead: OscillatorType;
+  base: number; // 根音 MIDI
+  chords: number[][]; // 每小節和弦（相對 base 的半音）
+}
+/** 順序＝下拉選單由上到下；和弦以三/四音表示，引擎做琶音 */
+const MUSIC_TRACKS: MusicTrack[] = [
+  { name: '輕快', bpm: 120, bass: 'triangle', lead: 'triangle', base: 57, chords: [[0, 4, 7], [7, 11, 14], [9, 12, 16], [5, 9, 12]] },
+  { name: '悠閒', bpm: 80, bass: 'sine', lead: 'sine', base: 60, chords: [[0, 4, 7, 11], [5, 9, 12], [-3, 0, 4], [-5, 0, 3, 7]] },
+  { name: '歡樂', bpm: 138, bass: 'square', lead: 'square', base: 60, chords: [[0, 4, 7], [5, 9, 12], [7, 11, 14], [0, 4, 7]] },
+  { name: '緊張', bpm: 150, bass: 'sawtooth', lead: 'sawtooth', base: 50, chords: [[0, 3, 7], [-2, 1, 5], [-4, 0, 3], [0, 3, 7]] },
+  { name: '神秘', bpm: 72, bass: 'triangle', lead: 'sine', base: 55, chords: [[0, 3, 7, 10], [5, 8, 12], [3, 7, 10], [-2, 2, 5]] },
+];
+
+let musicTimer: number | null = null;
+let musicTrack = -1; // -1 = 關閉
+let musicStep = 0;
+let musicNextTime = 0;
+
+const midiToFreq = (m: number) => 440 * Math.pow(2, (m - 69) / 12);
+
+/** 排程單一音樂音符（經 musicGain，受 master 靜音控制） */
+function musicNote(freq: number, time: number, dur: number, wave: OscillatorType, vol: number) {
+  if (!ctx || !musicGain) return;
+  const osc = ctx.createOscillator();
+  const g = ctx.createGain();
+  osc.type = wave;
+  osc.frequency.value = freq;
+  g.gain.setValueAtTime(0.0001, time);
+  g.gain.exponentialRampToValueAtTime(vol, time + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, time + dur);
+  osc.connect(g);
+  g.connect(musicGain);
+  osc.start(time);
+  osc.stop(time + dur + 0.02);
+}
+
+/** lookahead 排程器：每 ~25ms 把未來 0.15s 內的音符排進去 */
+function musicScheduler() {
+  const c = ensureCtx();
+  if (!c || musicTrack < 0) return;
+  const t = MUSIC_TRACKS[musicTrack];
+  const stepDur = 60 / t.bpm / 2; // 8 分音符
+  if (musicNextTime < c.currentTime) musicNextTime = c.currentTime + 0.05; // 靜音/分頁切回後追上
+  while (musicNextTime < c.currentTime + 0.15) {
+    const chord = t.chords[Math.floor(musicStep / 8) % t.chords.length];
+    const beat = musicStep % 8;
+    /** 低音：每半小節一個長音（根音低八度） */
+    if (beat === 0 || beat === 4) musicNote(midiToFreq(t.base + chord[0] - 12), musicNextTime, stepDur * 1.8, t.bass, 0.5);
+    /** 主旋律：和弦音琶音（高八度），輕快短音 */
+    const lead = chord[beat % chord.length] + 12;
+    musicNote(midiToFreq(t.base + lead), musicNextTime, stepDur * 0.9, t.lead, 0.32);
+    musicNextTime += stepDur;
+    musicStep++;
+  }
+}
+
 export const sound = {
   setMuted(v: boolean) {
     muted = v;
@@ -71,6 +142,25 @@ export const sound = {
   /** 使用者首次互動時呼叫，喚醒 AudioContext */
   enable() {
     ensure();
+  },
+  /** 背景音樂曲目名稱（供下拉選單顯示） */
+  musicTracks(): string[] {
+    return MUSIC_TRACKS.map((t) => t.name);
+  },
+  /** 選背景音樂：-1＝關閉，0~4＝對應曲目 */
+  setMusic(index: number) {
+    musicTrack = index >= 0 && index < MUSIC_TRACKS.length ? index : -1;
+    if (musicTrack < 0) {
+      if (musicTimer !== null) {
+        clearInterval(musicTimer);
+        musicTimer = null;
+      }
+      return;
+    }
+    ensureCtx();
+    musicStep = 0;
+    musicNextTime = 0;
+    if (musicTimer === null) musicTimer = window.setInterval(musicScheduler, 25);
   },
   /** 拿起一塊肉：輕快短音 */
   pickup() {

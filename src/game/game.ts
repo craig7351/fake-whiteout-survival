@@ -390,21 +390,35 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   /** ===== 武器系統 ===== */
   const weaponHolder = new TransformNode('weapon-holder', scene);
   weaponHolder.parent = player;
+  /** 武器整體放大倍率 */
+  const WEAPON_SCALE = 3;
+  weaponHolder.scaling.setAll(WEAPON_SCALE);
+  /** 武器是否已掛到模型手骨上（成功掛上後就交給動畫帶動，不再用固定位移） */
+  let weaponOnHand = false;
+  /** 迴旋斧：繞玩家旋轉的節點（場景座標，每幀跟隨玩家） */
+  const whirlNode = new TransformNode('whirl', scene);
+  const WHIRL_RADIUS = 2.2; // 斧頭離玩家的水平距離
+  const WHIRL_Y = 1.6; // 旋轉高度
+  const WHIRL_SPIN = 13; // 旋轉角速度（rad/s）
+  let whirlAngle = 0;
   const weaponMeshes: (Mesh | null)[] = WEAPONS.map(() => null);
   let equipped = Math.max(0, WEAPONS.findIndex((w) => w.id === START_WEAPON));
   let swingT = 0; // 近戰揮砍進度（1→0）
   let recoilT = 0; // 槍械後座（1→0）
-  let flashT = 0; // 槍口閃光殘留
-  /** 槍口閃光 */
-  const muzzle = MeshBuilder.CreateSphere('muzzle', { diameter: 0.3, segments: 6 }, scene);
-  const muzzleMat = new StandardMaterial('muzzle-mat', scene);
-  muzzleMat.emissiveColor = new Color3(1, 0.85, 0.3);
-  muzzleMat.diffuseColor = Color3.Black();
-  muzzleMat.specularColor = Color3.Black();
-  muzzle.material = muzzleMat;
-  muzzle.isPickable = false;
-  muzzle.parent = weaponHolder;
-  muzzle.setEnabled(false);
+  let flashT = 0; // 子彈軌跡殘留時間
+  /** 子彈軌跡：細長發光長條，射擊時從槍口連到目標、短暫顯示 */
+  const tracer = MeshBuilder.CreateBox('tracer', { width: 0.1, height: 0.1, depth: 1 }, scene);
+  const tracerMat = new StandardMaterial('tracer-mat', scene);
+  tracerMat.emissiveColor = new Color3(1, 0.92, 0.45);
+  tracerMat.diffuseColor = Color3.Black();
+  tracerMat.specularColor = Color3.Black();
+  tracerMat.disableLighting = true;
+  tracer.material = tracerMat;
+  tracer.isPickable = false;
+  tracer.setEnabled(false);
+  /** 槍口偏移（沿射擊方向前移、垂直上移）：對準槍管前端用，可由 debug 調 */
+  let muzzleFwd = 2.15;
+  let muzzleUp = 0.65;
   /** 武器框框（基地內三個白框；要花錢買，進度條填滿才解鎖） */
   const weaponBought = WEAPONS.map((w) => w.cost <= 0);
   const weaponPaid = WEAPONS.map((w) => (w.cost <= 0 ? w.cost : 0));
@@ -469,10 +483,31 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   };
   const hitFx = makeBurst('hitfx', new Color4(1, 0.95, 0.5, 1), new Color4(1, 0.55, 0.1, 1), 0.15, 0.5, 0.32, 6, true);
   const killFx = makeBurst('killfx', new Color4(0.95, 0.12, 0.12, 1), new Color4(0.45, 0, 0, 1), 0.3, 0.95, 0.6, 8, false);
+  const muzzleFx = makeBurst('muzzlefx', new Color4(1, 0.95, 0.6, 1), new Color4(1, 0.75, 0.2, 1), 0.12, 0.4, 0.12, 4, true);
   const burstAt = (ps: ParticleSystem, x: number, y: number, z: number, count: number) => {
     (ps.emitter as Vector3).set(x, y, z);
     ps.manualEmitCount = count;
   };
+  /** 射擊：槍口火花 + 從槍口連到目標的子彈軌跡（短暫顯示） */
+  function fireTracer(barrel: Vector3, tx: number, ty: number, tz: number) {
+    /** 起點＝握把原點往射擊方向前移 muzzleFwd、垂直上移 muzzleUp（對準槍管前端） */
+    const hx = tx - barrel.x;
+    const hz = tz - barrel.z;
+    const h = Math.hypot(hx, hz) || 1;
+    const ox = barrel.x + (hx / h) * muzzleFwd;
+    const oy = barrel.y + muzzleUp;
+    const oz = barrel.z + (hz / h) * muzzleFwd;
+    const dx = tx - ox;
+    const dy = ty - oy;
+    const dz = tz - oz;
+    const len = Math.hypot(dx, dy, dz) || 0.001;
+    tracer.position.set(ox + dx * 0.5, oy + dy * 0.5, oz + dz * 0.5);
+    tracer.scaling.set(1, 1, len);
+    tracer.rotation.set(-Math.atan2(dy, Math.hypot(dx, dz)), Math.atan2(dx, dz), 0);
+    tracer.setEnabled(true);
+    burstAt(muzzleFx, ox, oy, oz, 8);
+    flashT = 0.06;
+  }
 
   /** ===== 顧客池（模型載入後於 initAssets 建立可動副本） ===== */
   const customers: Customer[] = [];
@@ -711,16 +746,45 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       playerModel = hero;
     }
 
-    /** 載入三種武器模型（握把原點不對齊底部），掛在手上節點，依裝備顯示其一 */
+    /** 載入三種武器模型（握把原點不對齊底部），掛在 weaponHolder 上，依裝備顯示其一 */
     const wmeshes = await Promise.all(WEAPONS.map((w) => loadProp(scene, w.model, w.size, false)));
     wmeshes.forEach((m, i) => {
       if (!m) return;
       m.parent = weaponHolder;
       m.position.set(0, 0, 0);
+      /** 各武器握法微調（相對手部的旋轉） */
+      m.rotation.set(WEAPONS[i].hand.rx, WEAPONS[i].hand.ry, WEAPONS[i].hand.rz);
       m.isPickable = false;
       m.setEnabled(i === equipped);
       weaponMeshes[i] = m;
     });
+    /**
+     * 把武器掛到模型握武器的手骨上（內建 SMG 的父節點），與內建武器同位置，
+     * 之後就跟著 Slash/持槍 動畫擺動；並抵銷手骨累積縮放讓武器維持正規化大小。
+     */
+    const handNode = (playerModel?.builtinWeapon?.parent as TransformNode | undefined) ?? undefined;
+    if (handNode && playerModel?.builtinWeapon) {
+      const smg = playerModel.builtinWeapon;
+      weaponHolder.parent = handNode;
+      weaponHolder.position.copyFrom(smg.position);
+      weaponHolder.rotationQuaternion = smg.rotationQuaternion ? smg.rotationQuaternion.clone() : null;
+      if (!weaponHolder.rotationQuaternion) weaponHolder.rotation.copyFrom(smg.rotation);
+      handNode.computeWorldMatrix(true);
+      const sc = new Vector3();
+      handNode.getWorldMatrix().decompose(sc, undefined, undefined);
+      /** 抵銷手骨累積縮放，再乘上 WEAPON_SCALE（放大武器） */
+      weaponHolder.scaling.set(WEAPON_SCALE / (sc.x || 1), WEAPON_SCALE / (sc.y || 1), WEAPON_SCALE / (sc.z || 1));
+      weaponOnHand = true;
+    }
+    /** 迴旋斧：把斧頭 mesh 從手上移到 whirlNode、置於軌道半徑處（場景座標、固定大小） */
+    const whirlIdx = WEAPONS.findIndex((w) => w.whirl);
+    const whirlMesh = whirlIdx >= 0 ? weaponMeshes[whirlIdx] : null;
+    if (whirlMesh) {
+      whirlMesh.parent = whirlNode;
+      whirlMesh.position.set(WHIRL_RADIUS, 0, 0);
+      whirlMesh.rotation.set(Math.PI / 2, 0, 0); // 斧頭放平、隨節點旋轉甩動
+      whirlMesh.scaling.setAll(WEAPON_SCALE);
+    }
     equipWeapon(equipped);
 
     /** 建立顧客池：每位顧客各 instantiate 一份（隨機四種造型）帶骨骼動畫副本 */
@@ -1057,8 +1121,9 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         faceAngle = Math.atan2(first.x - player.position.x, first.z - player.position.z);
         if (wpn.ranged) {
           recoilT = 1;
-          flashT = 0.05;
-          muzzle.setEnabled(true);
+          /** 從槍口（模型自帶 SMG 節點）連一條子彈軌跡到第一目標 + 槍口火花 */
+          const barrel = playerModel?.builtinWeapon?.getAbsolutePosition() ?? weaponHolder.getAbsolutePosition();
+          fireTracer(barrel, first.x, 1.2, first.z);
           sound.shoot();
         } else {
           swingT = 1;
@@ -1103,12 +1168,21 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     if (recoilT > 0) recoilT = Math.max(0, recoilT - dt / 0.09);
     if (flashT > 0) {
       flashT -= dt;
-      if (flashT <= 0) muzzle.setEnabled(false);
+      if (flashT <= 0) tracer.setEnabled(false);
     }
-    const swingArc = wpn.ranged ? 0 : Math.sin((1 - swingT) * Math.PI) * 1.5; // 抬起→劈下
-    weaponHolder.rotation.set(wpn.hand.rx + swingArc, wpn.hand.ry, wpn.hand.rz);
-    weaponHolder.position.set(wpn.hand.x, wpn.hand.y, wpn.hand.z - recoilT * 0.18);
-    if (wpn.ranged) muzzle.position.set(0, 0, wpn.size * 0.6); // 槍口在前端
+    /** 已掛在手骨上時，擺動交給角色動畫（Slash/持槍）；否則用固定位移＋程序化揮砍 */
+    if (!weaponOnHand) {
+      const swingArc = wpn.ranged ? 0 : Math.sin((1 - swingT) * Math.PI) * 1.5; // 抬起→劈下
+      weaponHolder.rotation.set(wpn.hand.rx + swingArc, wpn.hand.ry, wpn.hand.rz);
+      weaponHolder.position.set(wpn.hand.x, wpn.hand.y, wpn.hand.z - recoilT * 0.18);
+    }
+
+    /** --- 迴旋斧：裝備時斧頭持續繞玩家旋轉甩動（傷害靠 cleave 命中範圍內全部怪物） --- */
+    if (wpn.whirl) {
+      whirlAngle += WHIRL_SPIN * dt;
+      whirlNode.position.set(player.position.x, WHIRL_Y, player.position.z);
+      whirlNode.rotation.y = whirlAngle;
+    }
 
     /** --- 撿地上的肉 --- */
     pickAccum += dt;
@@ -1768,6 +1842,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       dogStation.dispose();
       hitFx.dispose();
       killFx.dispose();
+      muzzleFx.dispose();
       sparkTex.dispose();
       weaponStations.forEach((ws) => ws.dispose());
       counterStack?.dispose();

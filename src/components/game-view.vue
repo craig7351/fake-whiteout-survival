@@ -26,6 +26,15 @@
       >
         ⚡ {{ stats.fps }}
       </span>
+      <!-- 背景音樂下拉 -->
+      <select
+        v-model.number="music"
+        @change="onMusic"
+        class="h-11 rounded-full bg-black/40 px-3 text-sm font-bold text-white backdrop-blur-md outline-none"
+      >
+        <option :value="0">🎵 關閉</option>
+        <option v-for="(name, i) in musicTracks" :key="i" :value="i + 1">🎵 {{ name }}</option>
+      </select>
     </div>
 
     <!-- Debug 面板：背後金條參數 -->
@@ -81,6 +90,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { createGame, type GameHandle, type GameStats } from '../game/game';
+import { sound } from '../game/sound';
 import Hud from './hud.vue';
 import Joystick from './joystick.vue';
 
@@ -106,6 +116,16 @@ let game: GameHandle | undefined;
 
 const MUTE_KEY = 'fake-whiteout:muted';
 const muted = ref(localStorage.getItem(MUTE_KEY) === '1');
+
+/** 背景音樂：0＝關閉，1~5＝對應曲目（下拉選） */
+const MUSIC_KEY = 'fake-whiteout:music';
+const musicTracks = sound.musicTracks();
+const music = ref(Number(localStorage.getItem(MUSIC_KEY) ?? '0'));
+function onMusic() {
+  sound.enable();
+  sound.setMusic(music.value - 1); // 0=關 → -1
+  localStorage.setItem(MUSIC_KEY, String(music.value));
+}
 
 const showHint = ref(true);
 let hintTimer: number | undefined;
@@ -148,6 +168,8 @@ onMounted(() => {
     onStats: (s) => Object.assign(stats, s),
   });
   game.setMuted(muted.value);
+  /** 套用上次選的背景音樂（實際播放會等首次點擊/移動解鎖音訊） */
+  if (music.value > 0) sound.setMusic(music.value - 1);
   hintTimer = window.setTimeout(() => (showHint.value = false), 9000);
 });
 
