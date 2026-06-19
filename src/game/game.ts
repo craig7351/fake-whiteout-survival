@@ -23,6 +23,8 @@ import { loadCharacter, loadProp, loadAnimatedFleet, type AnimatedModel, type An
 import { BackStack } from './back-stack';
 import { TreeField, type TreePlacement } from './tree-field';
 import { FloatingText } from './floating-text';
+import { unlockAchievement } from './achievements';
+import { addTotals, submitRun, getName } from './community';
 import { BloodDecals } from './decals';
 import { HpBar } from './hp-bar';
 import { Bubble } from './bubble';
@@ -106,6 +108,8 @@ export interface GameHandle {
   upgradeSelectedTower: () => void;
   /** 取消選取塔（關閉選單） */
   deselectTower: () => void;
+  /** Debug：直接跳到第 n 波（必要時先蓋好房子） */
+  setWave: (n: number) => void;
 }
 
 /** 一池同源 InstancedMesh，依傳入的位置陣列顯示前 N 個（其餘隱藏） */
@@ -425,8 +429,8 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   let houseHp = DEF.houseHp;
   const houseBar = new HpBar(scene, 3.0, 0.4);
   houseBar.setEnabled(false);
-  /** 波次：idle(未開始) / prep(準備) / active(交戰) / broken(房子毀損待修) */
-  let waveState: 'idle' | 'prep' | 'active' | 'broken' = 'idle';
+  /** 波次：idle(未開始) / prep(準備) / active(交戰) / broken(房子毀損待修) / won(通關) */
+  let waveState: 'idle' | 'prep' | 'active' | 'broken' | 'won' = 'idle';
   let waveNum = 0;
   let waveTimer = 0; // prep 倒數
   let zombiesToSpawn = 0; // 本波還要生成幾隻（一般）
@@ -736,6 +740,27 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   const muzzleFx = makeBurst('muzzlefx', new Color4(1, 0.95, 0.6, 1), new Color4(1, 0.75, 0.2, 1), 0.12, 0.4, 0.12, 4, true);
   /** 漂浮數字（+$／傷害） */
   const floatText = new FloatingText(scene);
+  /** ===== 社群統計累計（每幾秒把增量寫進 localStorage 總計 + 更新排行榜） ===== */
+  let pendMoney = 0; // 待寫入的「賺錢」增量
+  let pendCows = 0; // 待寫入的殺牛增量
+  let pendZombies = 0; // 待寫入的殺怪增量
+  let sessionMoney = 0; // 本場累計賺錢（排行榜用）
+  let bestWaveReached = 0; // 本場最高波數
+  let submittedWave = -1; // 已上榜的波數
+  let statsRunCounted = false; // 本場是否已計入場次
+  let statFlushT = 0;
+  const earn = (v: number) => {
+    pendMoney += v;
+    sessionMoney += v;
+  };
+
+  /** 成就：本場已解鎖（避免重複寫 localStorage），首次解鎖時冒提示 */
+  const unlockedLocal = new Set<string>();
+  const achieve = (id: string) => {
+    if (unlockedLocal.has(id)) return;
+    unlockedLocal.add(id);
+    if (unlockAchievement(id)) floatText.spawn('🏅 成就解鎖！', player.position.x, 4, player.position.z, '#ffe066', 1.6);
+  };
   /** 收錢漂浮數字節流累計（避免每根金條都冒一個） */
   let collectShowSum = 0;
   let collectShowAccum = 0;
@@ -1512,6 +1537,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
             for (let k = 0; k < c.meatYield; k++) {
               spawnDrop(c.x + (Math.random() - 0.5) * 1.2, c.z + (Math.random() - 0.5) * 1.2);
             }
+            pendCows++;
             anyKill = true;
           } else {
             burstAt(hitFx, c.x, 1.2, c.z, 14); // 命中火花
@@ -1623,6 +1649,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         cashBars -= 1;
         money += v;
         collectShowSum += v; // 累計，節流冒 +$
+        earn(v);
         spawnCollectFly(); // 金條飛回背後動畫（背上根數由 money 換算）
         sound.cash();
       }
@@ -1746,6 +1773,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
           dogBought = true;
           dogStation.setDone();
           spawnDog();
+          achieve('dog');
           sound.upgrade();
         }
       }
@@ -1770,6 +1798,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
           hunterBought = true;
           hunterStation.setDone();
           if (hunterFleet) spawnWorker(hunterFleet, 'hunt');
+          achieve('hunter');
           sound.upgrade();
         }
       }
@@ -1794,6 +1823,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
           cashierBought = true;
           cashierStation.setDone();
           if (cashierFleet) spawnWorker(cashierFleet, 'cash');
+          achieve('cashier');
           sound.upgrade();
         }
       }
@@ -1914,6 +1944,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
             c.happyEmoji = HAPPY_EMOJIS[(Math.random() * HAPPY_EMOJIS.length) | 0];
           }
           sound.sell();
+          achieve('sell');
         }
       } else {
         tx = CONFIG.customer.gate.x + (c.root.position.x < 0 ? -1 : 1) * 2;
@@ -1972,6 +2003,23 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
 
     renderStacks();
 
+    /** 社群統計：每 4 秒把增量寫進 localStorage 總計、更新本機排行榜 */
+    statFlushT += dt;
+    if (statFlushT >= 4) {
+      statFlushT = 0;
+      if (pendMoney > 0 || pendCows > 0 || pendZombies > 0) {
+        addTotals({ money: Math.round(pendMoney), cows: pendCows, monsters: pendZombies, runs: statsRunCounted ? 0 : 1 });
+        statsRunCounted = true;
+        pendMoney = 0;
+        pendCows = 0;
+        pendZombies = 0;
+      }
+      if (bestWaveReached > submittedWave) {
+        submittedWave = bestWaveReached;
+        submitRun({ name: getName(), wave: bestWaveReached, money: Math.round(sessionMoney), won: waveState === 'won', at: Date.now() });
+      }
+    }
+
     statAccum += dt;
     if (statAccum >= 0.1) {
       statAccum = 0;
@@ -1994,9 +2042,11 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         houseHp: Math.max(0, Math.round(houseHp)),
         houseMaxHp: DEF.houseHp,
         waveLabel:
-          waveState === 'broken'
-            ? `🏚️ 房子毀損！靠近房子修復 💰${DEF.repairCost}`
-            : waveState === 'prep'
+          waveState === 'won'
+            ? '🏆 通關！撐過 30 波'
+            : waveState === 'broken'
+              ? `🏚️ 房子毀損！靠近房子修復 💰${DEF.repairCost}`
+              : waveState === 'prep'
               ? `🛡️ 準備中 ${Math.ceil(Math.max(0, waveTimer))}s（下一波 第${waveNum + 1}波）`
               : waveState === 'active'
                 ? `🧟 第 ${waveNum} 波　剩 ${zombies.filter((z) => z.active).length + zombiesToSpawn + bossToSpawn}${bossToSpawn || zombies.some((z) => z.active && z.isBoss) ? ' 👹' : ''}`
@@ -2064,6 +2114,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   function revealPasture2() {
     if (pasture2Unlocked) return;
     pasture2Unlocked = true;
+    achieve('pasture2');
     pasture2Holder.setEnabled(true);
     /** 清掉牧場2 與西側走道範圍內的樹林 */
     treeField?.hideRegion(-37, -9, -12, 8);
@@ -2165,6 +2216,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     spawnExplosion(H.hx - 3, 1.4, H.hz + 3);
     camShake = 1;
     sound.boom();
+    achieve('house');
     /** 啟動防禦戰：進入準備期，第一波延遲後開打 */
     houseHp = DEF.houseHp;
     waveState = 'prep';
@@ -2427,6 +2479,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
             cashBars -= 1;
             money += v;
             collectShowSum += v;
+            earn(v);
             /** 把金磚從收銀員丟到玩家背上 */
             const [bx, by, bz] = playerBack();
             goldFly.spawn(w.x, 1.2, w.z, bx, by, bz);
@@ -2500,9 +2553,12 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       bloodDecals.spawn(z.x, z.z);
       burstAt(killFx, z.x, 1.0, z.z, 24);
       money += z.reward;
+      earn(z.reward);
+      pendZombies++;
       floatText.spawn(`+$${z.reward}`, z.x, 2.9, z.z, '#ffcf4a', 1.0);
       setZombieAnim(z, 'death');
       sound.kill();
+      if (z.isBoss) achieve('boss');
     } else {
       sound.hit();
     }
@@ -2730,6 +2786,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       if (houseHp < DEF.houseHp) houseHp = Math.min(DEF.houseHp, houseHp + DEF.houseRegen * dt);
       if (waveTimer <= 0) {
         waveNum++;
+        if (waveNum > bestWaveReached) bestWaveReached = waveNum;
         zombiesToSpawn = DEF.wave.baseCount + (waveNum - 1) * DEF.wave.perWaveAdd;
         bossToSpawn = waveNum % DEF.bossEvery === 0 ? 1 : 0; // 每 bossEvery 波出 Boss
         zombieSpawnAccum = DEF.wave.spawnGap;
@@ -2748,12 +2805,22 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
           }
         }
       } else if (!zombies.some((q) => q.active)) {
-        /** 本波清空：給獎勵、回準備 */
+        /** 本波清空：給獎勵 */
         const reward = DEF.wave.clearReward + (waveNum - 1) * DEF.wave.rewardPerWave;
         money += reward;
         floatText.spawn(`第 ${waveNum} 波清空 +$${reward}`, H.hx, 7, H.hz, '#7cf08a', 1.6);
-        waveState = 'prep';
-        waveTimer = DEF.prepSec;
+        if (waveNum >= 10) achieve('wave10');
+        if (waveNum >= 20) achieve('wave20');
+        if (waveNum >= DEF.winWave) {
+          /** 通關！ */
+          achieve('win');
+          waveState = 'won';
+          floatText.spawn('🏆 通關！撐過 30 波！', H.hx, 9, H.hz, '#ffe066', 2.4);
+          sound.upgrade();
+        } else {
+          waveState = 'prep';
+          waveTimer = DEF.prepSec;
+        }
       }
     } else if (waveState === 'broken') {
       /** 靠近房子付錢修復 */
@@ -3000,6 +3067,27 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     deselectTower() {
       selectedPad = -1;
       rangeRing.setEnabled(false);
+    },
+    setWave(n: number) {
+      /** 還沒蓋房子 → 先蓋好（炸地、長房子、紅磚院子、塔位） */
+      if (!houseBought) {
+        houseBought = true;
+        houseStation.setDone();
+        revealHouse();
+      }
+      /** 清掉場上殭屍，直接從第 n 波開始 */
+      for (const z of zombies)
+        if (z.active) {
+          z.active = false;
+          z.root.setEnabled(false);
+          z.bar?.setEnabled(false);
+        }
+      zombiesToSpawn = 0;
+      bossToSpawn = 0;
+      waveNum = Math.max(1, Math.round(n)) - 1;
+      houseHp = DEF.houseHp;
+      waveState = 'prep';
+      waveTimer = 0.2; // 幾乎立刻開打該波
     },
   };
 }

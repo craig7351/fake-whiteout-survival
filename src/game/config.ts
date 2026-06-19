@@ -220,6 +220,8 @@ export const CONFIG = {
     },
     /** 每幾波出現一隻 Boss */
     bossEvery: 3,
+    /** 撐過第幾波即通關 */
+    winWave: 30,
     /** 波次：數量與血量隨波遞增 */
     wave: { baseCount: 6, perWaveAdd: 3, hpPerWave: 1.5, spawnGap: 0.8, clearReward: 100, rewardPerWave: 30 },
     /** 箭塔（單體、快） */

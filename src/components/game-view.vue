@@ -69,9 +69,18 @@
       </div>
 
       <div class="mb-2 text-sm font-black text-fuchsia-300">💰 金錢 Debug</div>
-      <div>
+      <div class="mb-3">
         <div class="flex justify-between"><span>設定金錢</span><span class="font-bold">{{ moneyDebug.toLocaleString() }}</span></div>
         <input type="range" class="w-full accent-fuchsia-400" min="0" max="5000" step="50" v-model.number="moneyDebug" @input="onMoney" />
+      </div>
+
+      <div class="mb-2 text-sm font-black text-fuchsia-300">🧟 波次 Debug</div>
+      <div>
+        <div class="flex justify-between"><span>跳到第幾波</span><span class="font-bold">第 {{ waveDebug }} 波</span></div>
+        <input type="range" class="w-full accent-fuchsia-400" min="1" max="50" step="1" v-model.number="waveDebug" />
+        <button class="mt-2 w-full rounded-lg bg-fuchsia-600 py-1.5 text-sm font-black text-white active:scale-95" @click="onWave">
+          ▶ 跳到第 {{ waveDebug }} 波（會自動蓋房子）
+        </button>
       </div>
     </div>
 
@@ -192,6 +201,11 @@ function onTreeCount() {
 const moneyDebug = ref(0);
 function onMoney() {
   game?.setMoney(moneyDebug.value);
+}
+/** Debug：跳到指定波次感受難度 */
+const waveDebug = ref(10);
+function onWave() {
+  game?.setWave(waveDebug.value);
 }
 
 onMounted(() => {
