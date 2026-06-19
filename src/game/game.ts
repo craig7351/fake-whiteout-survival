@@ -22,6 +22,7 @@ import { createTerrain } from './terrain';
 import { loadCharacter, loadProp, loadAnimatedFleet, type AnimatedModel, type AnimatedFleet } from './model-loader';
 import { BackStack } from './back-stack';
 import { TreeField, type TreePlacement } from './tree-field';
+import { FloatingText } from './floating-text';
 import { BloodDecals } from './decals';
 import { HpBar } from './hp-bar';
 import { Bubble } from './bubble';
@@ -258,6 +259,23 @@ interface Dog {
   carry: number; // 目前背上的肉片數（0~carryMax，背上越疊越高）
 }
 
+/** 自動化員工（獵人＝自動打怪；收銀員＝自動收錢） */
+interface Worker {
+  role: 'hunt' | 'cash';
+  root: TransformNode;
+  idle?: AnimationGroup;
+  walk?: AnimationGroup;
+  attack?: AnimationGroup;
+  animState: 'idle' | 'walk' | 'attack';
+  baseScale: number;
+  yOffset: number;
+  x: number;
+  z: number;
+  target: Cow | null; // 獵人目標
+  attackAccum: number; // 攻擊計時
+  attackTimer: number; // 攻擊動畫殘留
+}
+
 export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {}): GameHandle {
   const engine = new Engine(canvas, true, { preserveDrawingBuffer: false, stencil: true });
   const scene = new Scene(engine);
@@ -333,6 +351,17 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   let dogBought = false;
   const dogs: Dog[] = [];
   let dogFleet: AnimatedFleet | null = null;
+
+  /** ===== 自動化員工：獵人（自動打怪）、收銀員（自動收錢） ===== */
+  const hunterStation = new BuyStation(scene, CONFIG.hunter.x, CONFIG.hunter.z, CONFIG.hunter.cost, '🏹', '已雇用獵人');
+  const cashierStation = new BuyStation(scene, CONFIG.cashier.x, CONFIG.cashier.z, CONFIG.cashier.cost, '🧑‍💼', '已雇用收銀員');
+  let hunterPaid = 0;
+  let hunterBought = false;
+  let cashierPaid = 0;
+  let cashierBought = false;
+  const workers: Worker[] = [];
+  let hunterFleet: AnimatedFleet | null = null;
+  let cashierFleet: AnimatedFleet | null = null;
 
   /** ===== 販售攤位 ===== */
   buildTable(scene, wood, CONFIG.counter.x, CONFIG.counter.z);
@@ -484,6 +513,11 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   const hitFx = makeBurst('hitfx', new Color4(1, 0.95, 0.5, 1), new Color4(1, 0.55, 0.1, 1), 0.15, 0.5, 0.32, 6, true);
   const killFx = makeBurst('killfx', new Color4(0.95, 0.12, 0.12, 1), new Color4(0.45, 0, 0, 1), 0.3, 0.95, 0.6, 8, false);
   const muzzleFx = makeBurst('muzzlefx', new Color4(1, 0.95, 0.6, 1), new Color4(1, 0.75, 0.2, 1), 0.12, 0.4, 0.12, 4, true);
+  /** 漂浮數字（+$／傷害） */
+  const floatText = new FloatingText(scene);
+  /** 收錢漂浮數字節流累計（避免每根金條都冒一個） */
+  let collectShowSum = 0;
+  let collectShowAccum = 0;
   const burstAt = (ps: ParticleSystem, x: number, y: number, z: number, count: number) => {
     (ps.emitter as Vector3).set(x, y, z);
     ps.manualEmitCount = count;
@@ -646,7 +680,8 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   }
 
   async function initAssets() {
-    const [meatMesh, barMesh, cowFleet, makoFleet, dogFleetLoaded, hero, cf1, cf2, cm1, cm2] = await Promise.all([
+    const [meatMesh, barMesh, cowFleet, makoFleet, dogFleetLoaded, hunterFleetLoaded, cashierFleetLoaded, hero, cf1, cf2, cm1, cm2] =
+      await Promise.all([
       loadProp(scene, '/models/winter/meat.glb', MEAT_SIZE),
       loadProp(scene, '/models/winter/gold_bar.glb', BAR_SIZE),
       loadAnimatedFleet(scene, '/models/cow_animated.glb', CONFIG.cow.size),
@@ -654,6 +689,10 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       loadAnimatedFleet(scene, '/models/enemies/Characters_Mako.gltf', CONFIG.cow.size),
       /** 牧羊犬（含 Idle/Walk/Run 動畫） */
       loadAnimatedFleet(scene, '/models/Characters_GermanShepherd.gltf', CONFIG.dog.size),
+      /** 員工：獵人(Henry)／收銀員(Anne)，含 Idle/Walk/Sword 動畫 */
+      loadAnimatedFleet(scene, '/models/Characters_Henry.gltf', CONFIG.hunter.size),
+      /** 收銀員：壽司兔（含 Idle/Walk/Idle_Holding 等動作） */
+      loadAnimatedFleet(scene, '/models/Rabbit_Pink.gltf', CONFIG.cashier.size),
       loadCharacter(scene, '/models/Characters_Shaun_SingleWeapon.gltf', CONFIG.player.height),
       loadAnimatedFleet(scene, '/models/customers/Character_Female_1.glb', CONFIG.customer.height),
       loadAnimatedFleet(scene, '/models/customers/Character_Female_2.glb', CONFIG.customer.height),
@@ -661,6 +700,8 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       loadAnimatedFleet(scene, '/models/customers/Character_Male_2.glb', CONFIG.customer.height),
     ]);
     dogFleet = dogFleetLoaded;
+    hunterFleet = hunterFleetLoaded;
+    cashierFleet = cashierFleetLoaded;
     /** 場外北極熊（純氣氛，立在牧場後方） */
     void loadProp(scene, '/models/winter/polar_bear.glb', 3.4).then((b) => {
       if (b) b.position.set(-12, 0, P.cz - P.halfZ - 6);
@@ -1131,6 +1172,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         }
         let anyKill = false;
         let anyHit = false;
+        const dmg = Math.round(attackDamage());
         for (const { c } of targets) {
           c.hp -= attackDamage();
           c.pulse = 1;
@@ -1147,12 +1189,14 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
             c.bar.setEnabled(false);
             bloodDecals.spawn(c.x, c.z);
             burstAt(killFx, c.x, 1.0, c.z, 26); // 擊殺血花
+            floatText.spawn(`+${c.meatYield}🥩`, c.x, 2.6, c.z, '#ffcf4a', 1.1); // 擊殺掉肉提示
             for (let k = 0; k < c.meatYield; k++) {
               spawnDrop(c.x + (Math.random() - 0.5) * 1.2, c.z + (Math.random() - 0.5) * 1.2);
             }
             anyKill = true;
           } else {
             burstAt(hitFx, c.x, 1.2, c.z, 14); // 命中火花
+            floatText.spawn(`${dmg}`, c.x, 2.6, c.z, '#ffffff', 0.8); // 傷害數字
             anyHit = true;
           }
         }
@@ -1231,14 +1275,23 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         cashPending -= v;
         cashBars -= 1;
         money += v;
+        collectShowSum += v; // 累計，節流冒 +$
         spawnCollectFly(); // 金條飛回背後動畫（背上根數由 money 換算）
         sound.cash();
       }
     } else cashAccum = 0.05;
+    /** 收錢漂浮數字：每 0.35s 把累計金額冒一個 +$（避免每根都冒太吵） */
+    collectShowAccum += dt;
+    if (collectShowSum > 0 && collectShowAccum >= 0.35) {
+      floatText.spawn(`+$${collectShowSum}`, player.position.x, CONFIG.player.height * PLAYER_SCALE + 0.4, player.position.z, '#ffe066', 1.1);
+      collectShowSum = 0;
+      collectShowAccum = 0;
+    }
 
-    /** --- 飛行物件更新（金條收錢/付款、肉擺攤） --- */
+    /** --- 飛行物件更新（金條收錢/付款、肉擺攤）+ 漂浮數字 --- */
     goldFly.update(dt);
     meatFly.update(dt);
+    floatText.update(dt);
 
     /** --- 升級 --- */
     let nearUp: NearUpgradeView | null = null;
@@ -1351,8 +1404,57 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       }
     }
 
-    /** --- 牧羊犬行為：找地上的肉 → 叼回攤位 --- */
+    /** --- 獵人框：付滿雇用一名自動打怪的獵人 --- */
+    if (!hunterBought) {
+      const H = CONFIG.hunter;
+      if (near(H.x, H.z, 2.0) && money > 0) {
+        const pay = Math.min(H.cost - hunterPaid, money, (H.cost / WEAPON_BUY_TIME) * dt);
+        if (pay > 0) {
+          hunterPaid += pay;
+          money -= pay;
+          payFlyAccum += pay;
+          while (payFlyAccum >= PAY_PER_BAR) {
+            payFlyAccum -= PAY_PER_BAR;
+            spawnPayFly(H.x, H.z);
+          }
+        }
+        hunterStation.setProgress(H.cost > 0 ? hunterPaid / H.cost : 1);
+        if (hunterPaid >= H.cost - 0.001) {
+          hunterBought = true;
+          hunterStation.setDone();
+          if (hunterFleet) spawnWorker(hunterFleet, 'hunt');
+          sound.upgrade();
+        }
+      }
+    }
+
+    /** --- 收銀員框：付滿雇用一名自動收錢的收銀員 --- */
+    if (!cashierBought) {
+      const K = CONFIG.cashier;
+      if (near(K.x, K.z, 2.0) && money > 0) {
+        const pay = Math.min(K.cost - cashierPaid, money, (K.cost / WEAPON_BUY_TIME) * dt);
+        if (pay > 0) {
+          cashierPaid += pay;
+          money -= pay;
+          payFlyAccum += pay;
+          while (payFlyAccum >= PAY_PER_BAR) {
+            payFlyAccum -= PAY_PER_BAR;
+            spawnPayFly(K.x, K.z);
+          }
+        }
+        cashierStation.setProgress(K.cost > 0 ? cashierPaid / K.cost : 1);
+        if (cashierPaid >= K.cost - 0.001) {
+          cashierBought = true;
+          cashierStation.setDone();
+          if (cashierFleet) spawnWorker(cashierFleet, 'cash');
+          sound.upgrade();
+        }
+      }
+    }
+
+    /** --- 牧羊犬／員工行為 --- */
     updateDogs(dt);
+    updateWorkers(dt);
 
     /** --- 顧客生成 --- */
     spawnAccum += dt;
@@ -1421,6 +1523,8 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
           cashBars += take; // 每片肉在桌上多一根金條
           c.meatCount = take;
           c.state = 'leave';
+          /** 成交：顧客頭上冒 +$ */
+          floatText.spawn(`+$${price() * take}`, c.root.position.x, CONFIG.customer.height + 1.0, c.root.position.z, '#7cf08a', 1.0);
           if (c.slot >= 0) {
             slotOccupied[c.slot] = null;
             c.slot = -1;
@@ -1713,6 +1817,151 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     }
   }
 
+  /** 切換員工動畫（idle/walk/attack） */
+  function setWorkerAnim(w: Worker, state: 'idle' | 'walk' | 'attack') {
+    if (w.animState === state) return;
+    w.animState = state;
+    w.idle?.stop();
+    w.walk?.stop();
+    w.attack?.stop();
+    if (state === 'walk') w.walk?.start(true);
+    else if (state === 'attack') w.attack?.start(true);
+    else w.idle?.start(true);
+  }
+
+  /** 雇用一名員工（從對應 fleet 複製一份帶動畫副本） */
+  function spawnWorker(fleet: AnimatedFleet, role: 'hunt' | 'cash') {
+    const i = workers.length;
+    const ent = fleet.container.instantiateModelsToScene((n) => `wk${role}${i}_${n}`, false);
+    const holder = new TransformNode(`worker_${role}${i}`, scene);
+    (ent.rootNodes[0] as TransformNode).parent = holder;
+    holder.scaling.setAll(fleet.scale);
+    ent.rootNodes.forEach((n) => (n as TransformNode).getChildMeshes?.().forEach((m) => (m.isPickable = false)));
+    const g = ent.animationGroups;
+    g.forEach((ag) => ag.stop());
+    const walk = g.find((ag) => /^walk$/i.test(ag.name)) ?? g.find((ag) => /walk|run/i.test(ag.name));
+    const idle = g.find((ag) => /^idle$/i.test(ag.name)) ?? g.find((ag) => /idle/i.test(ag.name)) ?? g[0];
+    /** 獵人＝揮砍動作；收銀員＝拿東西/工作循環（收錢時播放） */
+    const attack =
+      role === 'hunt'
+        ? (g.find((ag) => /^sword$|slash|^stab$|attack/i.test(ag.name)) ?? g.find((ag) => /punch/i.test(ag.name)))
+        : (g.find((ag) => /idle_holding|assembly_loop|pan_loop|chop_loop|holding/i.test(ag.name)) ?? idle);
+    const sx = role === 'hunt' ? 0 : CONFIG.cash.x - 1.5;
+    const sz = role === 'hunt' ? -CONFIG.arenaHalf + 1 : CONFIG.cash.z - 2;
+    holder.position.set(sx, fleet.yOffset, sz);
+    idle?.start(true);
+    workers.push({
+      role,
+      root: holder,
+      idle,
+      walk,
+      attack,
+      animState: 'idle',
+      baseScale: fleet.scale,
+      yOffset: fleet.yOffset,
+      x: sx,
+      z: sz,
+      target: null,
+      attackAccum: 0,
+      attackTimer: 0,
+    });
+  }
+
+  /** 員工每幀行為：獵人巡場打怪、收銀員顧攤收錢 */
+  function updateWorkers(dt: number) {
+    if (!workers.length) return;
+    const hc = CONFIG.hunter;
+    const cc = CONFIG.cashier;
+    for (const w of workers) {
+      if (w.attackTimer > 0) w.attackTimer -= dt;
+      let mv = false;
+      if (w.role === 'hunt') {
+        /** 目標失效就找最近的活怪 */
+        if (!w.target || !w.target.alive || !w.target.active) {
+          w.target = null;
+          let bd = Infinity;
+          for (const c of cows) {
+            if (!c.active || !c.alive) continue;
+            const q = (c.x - w.x) ** 2 + (c.z - w.z) ** 2;
+            if (q < bd) {
+              bd = q;
+              w.target = c;
+            }
+          }
+        }
+        if (w.target) {
+          const dx = w.target.x - w.x;
+          const dz = w.target.z - w.z;
+          const d = Math.hypot(dx, dz) || 1;
+          w.root.rotation.y = Math.atan2(dx, dz);
+          if (d > hc.range) {
+            const step = Math.min(d, hc.speed * dt);
+            w.x += (dx / d) * step;
+            w.z += (dz / d) * step;
+            mv = true;
+          } else {
+            w.attackAccum += dt;
+            if (w.attackAccum >= hc.interval) {
+              w.attackAccum = 0;
+              w.attackTimer = 0.3;
+              const c = w.target;
+              c.hp -= hc.damage;
+              c.pulse = 1;
+              if (c.hp <= 0) {
+                c.alive = false;
+                c.dying = CONFIG.cow.deathSec;
+                c.respawn = CONFIG.cow.respawnSec;
+                c.bar.setEnabled(false);
+                bloodDecals.spawn(c.x, c.z);
+                burstAt(killFx, c.x, 1.0, c.z, 26);
+                floatText.spawn(`+${c.meatYield}🥩`, c.x, 2.6, c.z, '#ffcf4a', 1.1);
+                for (let k = 0; k < c.meatYield; k++) spawnDrop(c.x + (Math.random() - 0.5) * 1.2, c.z + (Math.random() - 0.5) * 1.2);
+                sound.kill();
+                w.target = null;
+              } else {
+                burstAt(hitFx, c.x, 1.2, c.z, 12);
+                floatText.spawn(`${hc.damage}`, c.x, 2.6, c.z, '#ffffff', 0.7);
+                sound.hit();
+              }
+            }
+          }
+        }
+      } else {
+        /** 收銀員：走到收銀台旁，站定就持續把桌上的錢收進金庫 */
+        const tx = CONFIG.cash.x - 1.4;
+        const tz = CONFIG.cash.z - 1.8;
+        const dx = tx - w.x;
+        const dz = tz - w.z;
+        const d = Math.hypot(dx, dz);
+        if (d > 0.12) {
+          const step = Math.min(d, cc.speed * dt);
+          w.x += (dx / d) * step;
+          w.z += (dz / d) * step;
+          w.root.rotation.y = Math.atan2(dx, dz);
+          mv = true;
+        } else if (cashBars > 0) {
+          w.attackTimer = 0.2; // 收錢中：播放工作動作（拿東西循環）
+          w.attackAccum += dt;
+          if (w.attackAccum >= 0.08) {
+            w.attackAccum = 0;
+            const give = Math.max(1, Math.round(cashPending / cashBars));
+            const v = Math.min(give, cashPending);
+            cashPending -= v;
+            cashBars -= 1;
+            money += v;
+            collectShowSum += v;
+            /** 把金磚從收銀員丟到玩家背上 */
+            const [bx, by, bz] = playerBack();
+            goldFly.spawn(w.x, 1.2, w.z, bx, by, bz);
+            sound.cash();
+          }
+        }
+      }
+      w.root.position.set(w.x, w.yOffset, w.z);
+      setWorkerAnim(w, w.attackTimer > 0 ? 'attack' : mv ? 'walk' : 'idle');
+    }
+  }
+
   /** 玩家背後（面向反方向）約胸高的位置 */
   function playerBack(): [number, number, number] {
     const yaw = player.rotation.y;
@@ -1840,10 +2089,14 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       custContainers.forEach((cc) => cc.dispose());
       dogs.forEach((d) => d.root.dispose());
       dogStation.dispose();
+      workers.forEach((w) => w.root.dispose());
+      hunterStation.dispose();
+      cashierStation.dispose();
       hitFx.dispose();
       killFx.dispose();
       muzzleFx.dispose();
       sparkTex.dispose();
+      floatText.dispose();
       weaponStations.forEach((ws) => ws.dispose());
       counterStack?.dispose();
       cashStack?.dispose();
