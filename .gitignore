@@ -5,3 +5,5 @@ dist-ssr
 .DS_Store
 .vite
 dev.log
+.wrangler
+.dev.vars
