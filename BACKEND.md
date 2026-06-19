@@ -40,6 +40,27 @@ npx wrangler pages deploy dist --project-name=fake-whiteout-survival
 
 > 若用 Cloudflare 儀表板連 Git 自動部署：到 Pages 專案 → Settings → Functions → D1 bindings，把 `DB` 綁到 `fake-whiteout-survival-db`。
 
+## 安全性加固（已上線）
+
+公開寫入端點都加了防濫用機制：
+
+| 防護 | 說明 |
+|---|---|
+| **速率限制** | 依來源 IP（`CF-Connecting-IP`）限流：留言 8s、結算 4s、統計 2.5s／次，超過回 `429`。狀態存 D1 `rate` 表。 |
+| **髒話/廣告過濾** | 留言/暱稱命中黑名單（`_lib.ts` 的 `BAD_WORDS`）回 `422`。 |
+| **排行榜合理性** | `run` 波數上限＝破關波數（30），且未達 30 波宣稱通關一律記為未通關，擋洗榜。 |
+| **留言刪除（版主）** | `DELETE /api/messages`（body：`{id,key}`）需 `ADMIN_KEY` 相符；首頁每則留言的 ✕ 會提示輸入刪除碼並記住。 |
+| **既有防護** | SQL 全參數化（無注入）、輸出由 Vue 跳脫 + 伺服器去 `<>`（無 XSS）、無祕密入庫。 |
+
+### 設定 / 輪替版主刪除碼
+
+```bash
+# 設定（會提示或可用管線輸入）；存為 Pages production 環境的 Secret
+echo "你的新刪除碼" | npx wrangler pages secret put ADMIN_KEY --project-name=fake-whiteout-survival
+```
+
+> 進一步防護（選用，dashboard 設定）：Cloudflare **WAF Rate Limiting Rule** 或 **Turnstile** 人機驗證，可在不改碼的情況下再擋大量腳本流量。
+
 ## 本機測試（含 Functions / D1）
 
 ```bash

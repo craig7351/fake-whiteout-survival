@@ -1,7 +1,11 @@
-import { type FnContext, json, clampInt } from './_lib';
+import { type FnContext, json, clampInt, clientIp, rateLimited } from './_lib';
 
 /** POST /api/totals — 累加全服統計增量（賺錢/殺牛/殺怪/場次） */
 export const onRequestPost = async ({ request, env }: FnContext): Promise<Response> => {
+  // 遊戲端每 4 秒回報一次；同 IP 每 2.5 秒最多一次，擋灌水迴圈
+  if (await rateLimited(env, `tot:${clientIp(request)}`, 2500)) {
+    return json({ ok: false, error: 'too fast' }, 429);
+  }
   let body: Record<string, unknown>;
   try {
     body = (await request.json()) as Record<string, unknown>;

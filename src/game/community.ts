@@ -103,6 +103,7 @@ export const fetchLeaderboard = (limit = 10) => getJSON<RunRec[]>(`/leaderboard?
 
 /* ===== 留言板 ===== */
 export interface Msg {
+  id?: number; // 後端留言才有；本機留言無
   name: string;
   text: string;
   at: number;
@@ -121,6 +122,19 @@ export function postMessage(name: string, text: string) {
 }
 /** 全球留言（後端）；失敗回 null */
 export const fetchMessages = () => getJSON<Msg[]>('/messages');
+/** 版主刪除留言（需正確 key）；成功回 true */
+export async function deleteMessage(id: number, key: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${BASE}/messages`, {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id, key }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
 
 /* ===== 玩家暱稱 ===== */
 export function getName(): string {

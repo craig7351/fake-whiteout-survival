@@ -39,3 +39,9 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_messages_id ON messages (id DESC);
+
+-- 速率限制：key（action:ip）最後一次寫入時間
+CREATE TABLE IF NOT EXISTS rate (
+  k TEXT PRIMARY KEY,
+  last_at INTEGER NOT NULL
+);

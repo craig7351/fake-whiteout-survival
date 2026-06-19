@@ -99,9 +99,19 @@
           <button class="rounded-lg bg-sky-500 px-3 py-1.5 text-xs font-black text-white active:scale-95" @click="onPost">送出</button>
         </div>
         <div v-if="messages.length" class="flex max-h-44 flex-col gap-1.5 overflow-y-auto">
-          <div v-for="(m, i) in messages" :key="i" class="rounded-lg bg-white/60 px-2 py-1.5 text-xs">
-            <span class="font-black text-sky-700">{{ m.name }}</span>
-            <span class="ml-1 text-slate-700">{{ m.text }}</span>
+          <div v-for="(m, i) in messages" :key="i" class="group flex items-start gap-1 rounded-lg bg-white/60 px-2 py-1.5 text-xs">
+            <div class="min-w-0 flex-1">
+              <span class="font-black text-sky-700">{{ m.name }}</span>
+              <span class="ml-1 break-words text-slate-700">{{ m.text }}</span>
+            </div>
+            <button
+              v-if="m.id"
+              class="shrink-0 px-1 text-slate-300 hover:text-rose-500"
+              title="版主刪除"
+              @click="onDelete(m)"
+            >
+              ✕
+            </button>
           </div>
         </div>
         <div v-else class="py-2 text-center text-xs text-slate-400">還沒有留言，搶頭香！</div>
@@ -126,6 +136,8 @@ import {
   fetchMessages,
   fetchOnline,
   sendHeartbeat,
+  deleteMessage,
+  type Msg,
 } from '../game/community';
 
 const emit = defineEmits<{ (e: 'start'): void }>();
@@ -178,5 +190,24 @@ function onPost() {
   void fetchMessages().then((m) => {
     if (m) messages.value = m;
   });
+}
+
+const ADMIN_KEY_LS = 'fake-whiteout:adminKey';
+async function onDelete(m: Msg) {
+  if (!m.id) return; // 本機留言不可刪
+  let key = localStorage.getItem(ADMIN_KEY_LS) || '';
+  if (!key) {
+    key = window.prompt('輸入版主刪除碼：') || '';
+    if (!key) return;
+  }
+  const ok = await deleteMessage(m.id, key);
+  if (ok) {
+    localStorage.setItem(ADMIN_KEY_LS, key); // 記住正確的 key
+    const fresh = await fetchMessages();
+    if (fresh) messages.value = fresh;
+  } else {
+    localStorage.removeItem(ADMIN_KEY_LS);
+    window.alert('刪除失敗（刪除碼錯誤或無權限）');
+  }
 }
 </script>
