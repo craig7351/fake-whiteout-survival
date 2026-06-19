@@ -36,6 +36,7 @@ const COUNTER_TOP_Y = TABLE_LEG_H + TABLE_TOP_THICK; // 攤位桌面
 const MEAT_SIZE = 0.95; // 肉模型正規化最長邊（攤位/顧客手上，比照原專案大小）
 const CUSTOMER_MEAT = 5; // 每位顧客一次最多買/拿幾片肉
 const BRICK_SIZE = 1.5; // 房子院子紅磚塊邊長
+const TURRET_AIM_OFFSET = 0; // 砲管朝向修正（若瞄準方向偏 90°/180°，改 ±Math.PI/2 或 Math.PI）
 const BAR_SIZE = 1.05; // 金條正規化最長邊（收銀台金條，比照原專案大小）
 /** 顧客買到肉時隨機冒的開心 emoji */
 const HAPPY_EMOJIS = ['😋', '😄', '🥳', '❤️', '👍', '🤤'];
@@ -77,6 +78,8 @@ export interface GameStats {
   houseHp: number;
   houseMaxHp: number;
   waveLabel: string;
+  /** 目前點選的塔（升級選單用），未選則 null */
+  selectedTower: { type: string; level: number; maxLevel: number; cost: number; maxed: boolean; affordable: boolean } | null;
 }
 
 export interface GameOptions {
@@ -99,6 +102,10 @@ export interface GameHandle {
   setTreeCount: (v: number) => void;
   /** Debug：直接設定金錢 */
   setMoney: (v: number) => void;
+  /** 升級目前點選的塔 */
+  upgradeSelectedTower: () => void;
+  /** 取消選取塔（關閉選單） */
+  deselectTower: () => void;
 }
 
 /** 一池同源 InstancedMesh，依傳入的位置陣列顯示前 N 個（其餘隱藏） */
@@ -285,6 +292,8 @@ interface Worker {
 /** 殭屍（防禦戰：從東門湧入、走向房子攻擊房子血量） */
 interface Zombie {
   type: string; // 兵種
+  isBoss: boolean;
+  bar?: HpBar; // Boss 專屬血條
   root: TransformNode;
   idle?: AnimationGroup;
   walk?: AnimationGroup;
@@ -303,6 +312,7 @@ interface Zombie {
   reward: number;
   alive: boolean;
   active: boolean; // 是否在場上（從池中啟用）
+  entered: boolean; // 是否已從東門進入院子（先走到門口，再走向房子）
   dying: number;
   attackAccum: number;
 }
@@ -406,6 +416,8 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   /** 紅磚圍牆＋塔位掛在此節點上，買下房子後一次顯示 */
   const houseHolder = new TransformNode('house-yard', scene);
   houseHolder.setEnabled(false);
+  /** 每個塔位的浮空牌貼圖（可重畫更新等級/費用） */
+  const towerSigns: DynamicTexture[] = [];
   buildTowerPads(houseHolder);
 
   /** ===== 房子防禦戰狀態 ===== */
@@ -417,7 +429,8 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   let waveState: 'idle' | 'prep' | 'active' | 'broken' = 'idle';
   let waveNum = 0;
   let waveTimer = 0; // prep 倒數
-  let zombiesToSpawn = 0; // 本波還要生成幾隻
+  let zombiesToSpawn = 0; // 本波還要生成幾隻（一般）
+  let bossToSpawn = 0; // 本波還要生成幾隻 Boss
   let zombieSpawnAccum = 0;
   let repairPaid = 0; // 毀損後修復付款累計
   const zombies: Zombie[] = [];
@@ -425,7 +438,33 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   /** 塔來源 mesh（箭塔/砲塔）+ 各塔位狀態 */
   let towerSrc: Mesh | null = null;
   let cannonSrc: Mesh | null = null;
-  const towerPads = CONFIG.house.towerPads.map((p) => ({ x: p.x, z: p.z, type: p.type, paid: 0, built: false, fireAccum: 0 }));
+  const towerPads = CONFIG.house.towerPads.map((p) => ({
+    x: p.x,
+    z: p.z,
+    type: p.type,
+    paid: 0,
+    built: false,
+    level: 0,
+    fireAccum: 0,
+    inst: null as InstancedMesh | null,
+  }));
+  /** 塔升級到第 lvl 級的花費（lvl 從 1 起） */
+  const towerUpgradeCost = (type: 'arrow' | 'cannon', lvl: number) =>
+    Math.floor((type === 'cannon' ? DEF.cannon.cost : DEF.tower.cost) * 0.8 * Math.pow(1.7, lvl));
+  /** 塔位牌依狀態重畫 */
+  function refreshTowerSign(i: number) {
+    const pad = towerPads[i];
+    const tex = towerSigns[i];
+    if (!tex) return;
+    const emoji = pad.type === 'cannon' ? '💣' : '🏹';
+    if (!pad.built) {
+      drawTowerSign(tex, emoji, `$${pad.type === 'cannon' ? DEF.cannon.cost : DEF.tower.cost}`);
+    } else if (pad.level >= DEF.towerMaxLevel) {
+      drawTowerSign(tex, emoji, `Lv.${pad.level} MAX`, '#9af0b0');
+    } else {
+      drawTowerSign(tex, emoji, `Lv.${pad.level} ↑$${towerUpgradeCost(pad.type, pad.level + 1)}`, '#cfe6ff');
+    }
+  }
   /** 塔射擊用的細線 tracer 池 */
   const towerTracers = Array.from({ length: 10 }, (_, i) => {
     const t = MeshBuilder.CreateBox(`ttr${i}`, { width: 0.12, height: 0.12, depth: 1 }, scene);
@@ -440,6 +479,66 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     return { mesh: t, life: 0 };
   });
   let tracerCursor = 0;
+  /** 射程指示圈：點到塔時顯示該塔射程範圍 */
+  const rangeRing = MeshBuilder.CreateDisc('range-ring', { radius: 1, tessellation: 48 }, scene);
+  rangeRing.rotation.x = Math.PI / 2;
+  rangeRing.isPickable = false;
+  const rrMat = new StandardMaterial('range-ring-mat', scene);
+  rrMat.emissiveColor = new Color3(0.3, 0.8, 1);
+  rrMat.diffuseColor = Color3.Black();
+  rrMat.specularColor = Color3.Black();
+  rrMat.disableLighting = true;
+  rrMat.alpha = 0.16;
+  rrMat.backFaceCulling = false;
+  rangeRing.material = rrMat;
+  rangeRing.setEnabled(false);
+  /** 目前選取的塔位（點塔開升級選單用）；-1 = 未選 */
+  let selectedPad = -1;
+  /** 點擊：算出地面點，選取最近的已蓋塔（顯示射程圈 + 升級選單），點空白處取消 */
+  const onTowerPick = () => {
+    const ray = scene.createPickingRay(scene.pointerX, scene.pointerY, null, camera);
+    if (Math.abs(ray.direction.y) < 1e-4) return;
+    const t = -ray.origin.y / ray.direction.y;
+    if (t < 0) return;
+    const px = ray.origin.x + ray.direction.x * t;
+    const pz = ray.origin.z + ray.direction.z * t;
+    let bi = -1;
+    let bd = 9; // 點擊容差半徑 3
+    for (let i = 0; i < towerPads.length; i++) {
+      const pad = towerPads[i];
+      if (!pad.built) continue;
+      const q = (pad.x - px) ** 2 + (pad.z - pz) ** 2;
+      if (q < bd) {
+        bd = q;
+        bi = i;
+      }
+    }
+    selectedPad = bi;
+    if (bi >= 0) {
+      const pad = towerPads[bi];
+      const range = pad.type === 'cannon' ? DEF.cannon.range : DEF.tower.range;
+      rangeRing.position.set(pad.x, 0.12, pad.z);
+      rangeRing.scaling.setAll(range);
+      rangeRing.setEnabled(true);
+    } else {
+      rangeRing.setEnabled(false);
+    }
+  };
+  canvas.addEventListener('pointerdown', onTowerPick);
+  /** 升級目前選取的塔（由選單按鈕呼叫，整筆扣款、即時升級） */
+  function doUpgradeTower() {
+    if (selectedPad < 0) return;
+    const pad = towerPads[selectedPad];
+    if (!pad.built || pad.level >= DEF.towerMaxLevel) return;
+    const cost = towerUpgradeCost(pad.type, pad.level + 1);
+    if (money < cost) return;
+    money -= cost;
+    pad.level++;
+    pad.inst?.scaling.setAll(1 + pad.level * 0.12);
+    floatText.spawn(`Lv.${pad.level}!`, pad.x, 3.5, pad.z, '#9af0b0', 1.2);
+    refreshTowerSign(selectedPad);
+    sound.upgrade();
+  }
 
   /** ===== 販售攤位 ===== */
   buildTable(scene, wood, CONFIG.counter.x, CONFIG.counter.z);
@@ -824,8 +923,16 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
           const idle = g.find((ag) => /^idle$/i.test(ag.name)) ?? g[0];
           const attack = g.find((ag) => /idle_attack|attack|punch|bite|sword|slash/i.test(ag.name));
           const death = g.find((ag) => /death|die/i.test(ag.name));
+          const isBoss = type === 'boss';
+          let bar: HpBar | undefined;
+          if (isBoss) {
+            bar = new HpBar(scene, 4, 0.5);
+            bar.setEnabled(false);
+          }
           zombies.push({
             type,
+            isBoss,
+            bar,
             root: holder,
             idle,
             walk,
@@ -844,20 +951,21 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
             reward: cfg.reward,
             alive: false,
             active: false,
+            entered: false,
             dying: 0,
             attackAccum: 0,
           });
         }
       });
     }
-    /** 塔模型來源：箭塔 / 砲塔 */
-    void loadProp(scene, '/models/winter/tower.glb', DEF.tower.size).then((m) => {
+    /** 塔模型來源：箭塔（Gatling 砲塔）/ 砲塔 */
+    void loadProp(scene, '/models/gatling_turret.glb', DEF.tower.size).then((m) => {
       if (m) {
         m.isVisible = false;
         towerSrc = m;
       }
     });
-    void loadProp(scene, '/models/bell_tower.glb', DEF.cannon.size).then((m) => {
+    void loadProp(scene, '/models/flamethrower_turret.glb', DEF.cannon.size).then((m) => {
       if (m) {
         m.isVisible = false;
         cannonSrc = m;
@@ -1837,8 +1945,17 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
             : waveState === 'prep'
               ? `🛡️ 準備中 ${Math.ceil(Math.max(0, waveTimer))}s（下一波 第${waveNum + 1}波）`
               : waveState === 'active'
-                ? `🧟 第 ${waveNum} 波　剩 ${zombies.filter((z) => z.active).length + zombiesToSpawn}`
+                ? `🧟 第 ${waveNum} 波　剩 ${zombies.filter((z) => z.active).length + zombiesToSpawn + bossToSpawn}${bossToSpawn || zombies.some((z) => z.active && z.isBoss) ? ' 👹' : ''}`
                 : '',
+        selectedTower:
+          selectedPad >= 0 && towerPads[selectedPad]?.built
+            ? (() => {
+                const pad = towerPads[selectedPad];
+                const maxed = pad.level >= DEF.towerMaxLevel;
+                const cost = maxed ? 0 : towerUpgradeCost(pad.type, pad.level + 1);
+                return { type: pad.type, level: pad.level, maxLevel: DEF.towerMaxLevel, cost, maxed, affordable: money >= cost };
+              })()
+            : null,
       });
     }
   });
@@ -1959,8 +2076,25 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       mat.specularColor = Color3.Black();
       disc.material = mat;
       disc.parent = parent;
-      const label = pad.type === 'cannon' ? `💣 $${CONFIG.defense.cannon.cost}` : `🏹 $${CONFIG.defense.tower.cost}`;
-      makeSign(scene, label, pad.x, 2.2, pad.z).parent = parent;
+      /** 浮空牌（動態貼圖，之後可重畫顯示等級/費用） */
+      const tex = new DynamicTexture('tpad-tex', { width: 256, height: 140 }, scene, false);
+      const plane = MeshBuilder.CreatePlane('tpad-sign', { width: 2.6, height: 1.4 }, scene);
+      plane.position.set(pad.x, 2.4, pad.z);
+      plane.billboardMode = Mesh.BILLBOARDMODE_ALL;
+      plane.isPickable = false;
+      plane.parent = parent;
+      const smat = new StandardMaterial('tpad-sign-mat', scene);
+      smat.diffuseTexture = tex;
+      smat.emissiveTexture = tex;
+      smat.emissiveColor = new Color3(1, 1, 1);
+      smat.diffuseColor = Color3.Black();
+      smat.specularColor = Color3.Black();
+      smat.disableLighting = true;
+      smat.useAlphaFromDiffuseTexture = true;
+      smat.backFaceCulling = false;
+      plane.material = smat;
+      towerSigns.push(tex);
+      drawTowerSign(tex, pad.type === 'cannon' ? '💣' : '🏹', `$${pad.type === 'cannon' ? CONFIG.defense.cannon.cost : CONFIG.defense.tower.cost}`);
     }
   }
 
@@ -2262,7 +2396,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     z.attack?.stop();
     z.death?.stop();
     if (state === 'walk') z.walk?.start(true);
-    else if (state === 'attack') z.attack?.start(true);
+    else if (state === 'attack') (z.attack ?? z.idle)?.start(true); // 無攻擊動畫（如 Boss）→ 用 idle
     else if (state === 'death') z.death?.start(false);
     else z.idle?.start(true);
   }
@@ -2275,16 +2409,18 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     return 'basic';
   }
 
-  /** 從東門啟用一隻池中殭屍 */
-  function spawnZombie() {
-    const type = pickZombieType();
-    const z = zombies.find((q) => !q.active && q.type === type) ?? zombies.find((q) => !q.active);
-    if (!z) return;
+  /** 從東門啟用一隻池中殭屍（forceType 用於指定 Boss）；回傳是否成功 */
+  function spawnZombie(forceType?: string): boolean {
+    const type = forceType ?? pickZombieType();
+    const z = zombies.find((q) => !q.active && q.type === type) ?? (forceType ? undefined : zombies.find((q) => !q.active));
+    if (!z) return false;
     const y = CONFIG.house.yard;
-    const gap = CONFIG.house.zombieGap;
-    z.x = y.maxX - 0.6;
-    z.z = gap.center + (Math.random() * 2 - 1) * (gap.half - 0.5);
-    z.hpMax = z.baseHp + (waveNum - 1) * DEF.wave.hpPerWave;
+    /** 從地圖遠方東側（角落）生成，z 分散到遠角，再走向東門 */
+    z.x = y.maxX + 16 + Math.random() * 6;
+    z.z = -38 + Math.random() * 54;
+    z.entered = false;
+    /** Boss 血量隨波加成更高 */
+    z.hpMax = z.baseHp + (waveNum - 1) * DEF.wave.hpPerWave * (z.isBoss ? 5 : 1);
     z.hp = z.hpMax;
     z.alive = true;
     z.active = true;
@@ -2296,6 +2432,8 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     z.idle?.stop();
     z.walk?.start(true);
     z.animState = 'walk';
+    if (z.isBoss) floatText.spawn('👹 BOSS!', z.x, 6, z.z, '#ff5b5b', 1.8);
+    return true;
   }
 
   /** 對殭屍造成傷害（玩家或塔共用）：含火花/血花/掉錢/傷害數字 */
@@ -2349,62 +2487,75 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       }
     }
 
-    /** 蓋塔（站塔位付款）+ 塔自動射擊 */
-    const stopDist = (Math.max(innHalfX, innHalfZ) || 4) + 1.2;
-    for (const pad of towerPads) {
+    /** 蓋塔（站塔位付款）+ 塔自動射擊（升級改點塔開選單） */
+    const stopDist = (Math.max(innHalfX, innHalfZ) || 4) + 0.3;
+    for (let i = 0; i < towerPads.length; i++) {
+      const pad = towerPads[i];
       const cfg = pad.type === 'cannon' ? DEF.cannon : DEF.tower;
-      if (!pad.built) {
-        if (near(pad.x, pad.z, 2.0) && money > 0) {
-          const pay = Math.min(cfg.cost - pad.paid, money, (cfg.cost / WEAPON_BUY_TIME) * dt);
-          pad.paid += pay;
-          money -= pay;
-          payFlyAccum += pay;
-          while (payFlyAccum >= PAY_PER_BAR) {
-            payFlyAccum -= PAY_PER_BAR;
-            spawnPayFly(pad.x, pad.z);
-          }
-          if (pad.paid >= cfg.cost - 0.001) {
-            pad.built = true;
-            const src = pad.type === 'cannon' ? cannonSrc : towerSrc;
-            if (src) {
-              const inst = src.createInstance('tower');
-              inst.position.set(pad.x, 0, pad.z);
-              inst.isPickable = false;
-              inst.parent = houseHolder;
-            }
-            sound.upgrade();
-          }
+      if (!pad.built && near(pad.x, pad.z, 2.0) && money > 0) {
+        /** 蓋塔 */
+        const pay = Math.min(cfg.cost - pad.paid, money, (cfg.cost / WEAPON_BUY_TIME) * dt);
+        pad.paid += pay;
+        money -= pay;
+        payFlyAccum += pay;
+        while (payFlyAccum >= PAY_PER_BAR) {
+          payFlyAccum -= PAY_PER_BAR;
+          spawnPayFly(pad.x, pad.z);
         }
-        continue;
+        if (pad.paid >= cfg.cost - 0.001) {
+          pad.built = true;
+          pad.level = 1;
+          const src = pad.type === 'cannon' ? cannonSrc : towerSrc;
+          if (src) {
+            const inst = src.createInstance('tower');
+            inst.position.set(pad.x, 0, pad.z);
+            inst.isPickable = false;
+            inst.parent = houseHolder;
+            pad.inst = inst;
+          }
+          refreshTowerSign(i);
+          sound.upgrade();
+        }
       }
-      /** 已蓋：鎖定最近殭屍開火 */
-      pad.fireAccum += dt;
-      if (pad.fireAccum >= cfg.interval) {
-        let best: Zombie | null = null;
-        let bd = cfg.range * cfg.range;
-        for (const z of zombies) {
-          if (!z.active || !z.alive) continue;
-          const q = (z.x - pad.x) ** 2 + (z.z - pad.z) ** 2;
-          if (q < bd) {
-            bd = q;
-            best = z;
-          }
+      if (!pad.built) continue;
+      /** 已蓋：等級加成傷害與射速 */
+      const dmg = cfg.dmg * (1 + (pad.level - 1) * 0.5);
+      const interval = cfg.interval / (1 + (pad.level - 1) * 0.35);
+      /** 每幀鎖定最近殭屍（供瞄準與開火） */
+      let best: Zombie | null = null;
+      let bd = cfg.range * cfg.range;
+      for (const z of zombies) {
+        if (!z.active || !z.alive) continue;
+        const q = (z.x - pad.x) ** 2 + (z.z - pad.z) ** 2;
+        if (q < bd) {
+          bd = q;
+          best = z;
         }
+      }
+      /** 砲管轉向目標（平滑） */
+      if (best && pad.inst) {
+        const aim = Math.atan2(best.x - pad.x, best.z - pad.z) + TURRET_AIM_OFFSET;
+        let cur = pad.inst.rotation.y;
+        let diff = aim - cur;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        pad.inst.rotation.y = cur + diff * Math.min(1, dt * 10);
+      }
+      pad.fireAccum += dt;
+      if (pad.fireAccum >= interval) {
         if (best) {
           pad.fireAccum = 0;
           if (pad.type === 'cannon') {
-            /** 砲塔：在目標處爆炸，濺射範圍內所有殭屍 */
             spawnExplosion(best.x, 1.2, best.z);
             const sp2 = DEF.cannon.splash * DEF.cannon.splash;
             for (const z of zombies) {
               if (!z.active || !z.alive) continue;
-              if ((z.x - best.x) ** 2 + (z.z - best.z) ** 2 <= sp2) damageZombie(z, DEF.cannon.dmg);
+              if ((z.x - best.x) ** 2 + (z.z - best.z) ** 2 <= sp2) damageZombie(z, dmg);
             }
           } else {
-            /** 箭塔：單體 hitscan + 彈道 */
             fireTowerTracer(pad.x, 3.6, pad.z, best.x, 1.6, best.z);
             burstAt(muzzleFx, pad.x, 3.6, pad.z, 4);
-            damageZombie(best, DEF.tower.dmg);
+            damageZombie(best, dmg);
           }
         }
       }
@@ -2419,14 +2570,26 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         if (z.dying <= 0) {
           z.active = false;
           z.root.setEnabled(false);
+          z.bar?.setEnabled(false);
         }
         continue;
       }
-      const dx = H.hx - z.x;
-      const dz = H.hz - z.z;
+      /** 尚未進門：先走到東門缺口內側；進門後再走向房子 */
+      const gateX = CONFIG.house.yard.maxX;
+      const gateZ = CONFIG.house.zombieGap.center;
+      const tx = z.entered ? H.hx : gateX - 2.5; // 目標點在門內側，確保穿過
+      const tz = z.entered ? H.hz : gateZ;
+      const dx = tx - z.x;
+      const dz = tz - z.z;
       const d = Math.hypot(dx, dz) || 1;
       z.root.rotation.y = Math.atan2(dx, dz);
-      if (d > stopDist) {
+      if (!z.entered) {
+        const step = Math.min(d, z.speed * dt);
+        z.x += (dx / d) * step;
+        z.z += (dz / d) * step;
+        if (z.x <= gateX - 1.5) z.entered = true; // 已穿過東門
+        setZombieAnim(z, 'walk');
+      } else if (d > stopDist) {
         const step = Math.min(d - stopDist, z.speed * dt);
         z.x += (dx / d) * step;
         z.z += (dz / d) * step;
@@ -2441,6 +2604,12 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         }
       }
       z.root.position.set(z.x, z.yOffset, z.z);
+      /** Boss 血條 */
+      if (z.bar) {
+        z.bar.setEnabled(true);
+        z.bar.setRatio(Math.max(0, z.hp) / z.hpMax);
+        z.bar.setPosition(z.x, 6.2, z.z);
+      }
     }
 
     /** 房子被打爆 → 毀損狀態，清掉殭屍、等玩家靠近付錢修復 */
@@ -2449,10 +2618,13 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       waveState = 'broken';
       camShake = 1;
       sound.boom();
+      zombiesToSpawn = 0;
+      bossToSpawn = 0;
       for (const z of zombies)
         if (z.active) {
           z.active = false;
           z.root.setEnabled(false);
+          z.bar?.setEnabled(false);
         }
     }
 
@@ -2462,16 +2634,21 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       if (waveTimer <= 0) {
         waveNum++;
         zombiesToSpawn = DEF.wave.baseCount + (waveNum - 1) * DEF.wave.perWaveAdd;
+        bossToSpawn = waveNum % DEF.bossEvery === 0 ? 1 : 0; // 每 bossEvery 波出 Boss
         zombieSpawnAccum = DEF.wave.spawnGap;
         waveState = 'active';
       }
     } else if (waveState === 'active') {
-      if (zombiesToSpawn > 0) {
+      if (zombiesToSpawn > 0 || bossToSpawn > 0) {
         zombieSpawnAccum += dt;
         if (zombieSpawnAccum >= DEF.wave.spawnGap && zombies.some((q) => !q.active)) {
           zombieSpawnAccum = 0;
-          spawnZombie();
-          zombiesToSpawn--;
+          if (zombiesToSpawn > 0) {
+            spawnZombie();
+            zombiesToSpawn--;
+          } else if (spawnZombie('boss')) {
+            bossToSpawn--;
+          }
         }
       } else if (!zombies.some((q) => q.active)) {
         /** 本波清空：給獎勵、回準備 */
@@ -2638,6 +2815,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('resize', onResize);
       canvas.removeEventListener('pointerdown', firstTouch);
+      canvas.removeEventListener('pointerdown', onTowerPick);
       backStack.mesh.dispose();
       goldStack.mesh.dispose();
       treeField?.dispose();
@@ -2666,11 +2844,15 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       inn?.dispose();
       houseHolder.dispose();
       houseBar.dispose();
-      zombies.forEach((z) => z.root.dispose());
+      zombies.forEach((z) => {
+        z.bar?.dispose();
+        z.root.dispose();
+      });
       zombieFleets.forEach((f) => f.container.dispose());
       towerTracers.forEach((t) => t.mesh.dispose());
       towerSrc?.dispose();
       cannonSrc?.dispose();
+      rangeRing.dispose();
       hitFx.dispose();
       killFx.dispose();
       muzzleFx.dispose();
@@ -2710,6 +2892,13 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     },
     setMoney(v: number) {
       money = Math.max(0, v);
+    },
+    upgradeSelectedTower() {
+      doUpgradeTower();
+    },
+    deselectTower() {
+      selectedPad = -1;
+      rangeRing.setEnabled(false);
     },
   };
 }
@@ -2876,6 +3065,26 @@ function makeSign(scene: Scene, text: string, x: number, y: number, z: number): 
   mat.backFaceCulling = false;
   plane.material = mat;
   return plane;
+}
+
+/** 塔位浮空牌內容（emoji + 一行說明），可重畫以更新等級/費用 */
+function drawTowerSign(tex: DynamicTexture, emoji: string, sub: string, subColor = '#ffd24a') {
+  const ctx = tex.getContext() as CanvasRenderingContext2D;
+  const W = 256;
+  const H = 140;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = 'rgba(20,30,55,0.84)';
+  roundRect(ctx, 6, 6, W - 12, H - 12, 24);
+  ctx.fill();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '64px sans-serif';
+  ctx.fillText(emoji, W / 2, 50);
+  ctx.font = 'bold 36px sans-serif';
+  ctx.fillStyle = subColor;
+  ctx.fillText(sub, W / 2, 108);
+  tex.hasAlpha = true;
+  tex.update();
 }
 
 /** 地面觸發墊 */

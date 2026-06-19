@@ -83,6 +83,33 @@
       基地內踩 🪓🗡️🔫 換武器 → 進 🐄牧場 打牛 → 撿肉走回 🥩販售 擺攤 → 顧客買單後到 💲收銀 收錢 → 踩升級墊變強
     </div>
 
+    <!-- 點塔升級選單 -->
+    <div
+      v-if="stats.selectedTower"
+      class="absolute bottom-28 left-1/2 z-30 w-64 -translate-x-1/2 rounded-2xl bg-black/80 p-3 text-center text-white shadow-2xl ring-1 ring-white/15 backdrop-blur-md"
+    >
+      <button
+        class="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-white/15 text-sm hover:bg-white/30"
+        @click="onTowerClose"
+      >
+        ✕
+      </button>
+      <div class="text-lg font-black">
+        {{ stats.selectedTower.type === 'cannon' ? '💣 砲塔' : '🏹 機槍塔' }}
+        <span class="ml-1 text-sky-300">Lv.{{ stats.selectedTower.level }}/{{ stats.selectedTower.maxLevel }}</span>
+      </div>
+      <div class="mt-1 text-xs text-white/70">傷害 / 射速 隨等級提升</div>
+      <button
+        v-if="!stats.selectedTower.maxed"
+        class="mt-2.5 w-full rounded-xl px-4 py-2.5 text-base font-black transition active:scale-95"
+        :class="stats.selectedTower.affordable ? 'bg-emerald-500 text-white hover:bg-emerald-400' : 'bg-white/15 text-white/50'"
+        @click="onTowerUpgrade"
+      >
+        ⬆️ 升級　💰 {{ stats.selectedTower.cost.toLocaleString() }}
+      </button>
+      <div v-else class="mt-2.5 rounded-xl bg-amber-500/30 px-4 py-2.5 text-base font-black text-amber-200">已滿級 ✦</div>
+    </div>
+
     <joystick class="absolute bottom-8 left-8 z-10" @move="onJoyMove" @end="onJoyEnd" />
   </div>
 </template>
@@ -114,6 +141,7 @@ const stats = reactive<GameStats>({
   houseHp: 0,
   houseMaxHp: 0,
   waveLabel: '',
+  selectedTower: null,
 });
 
 let game: GameHandle | undefined;
@@ -187,6 +215,12 @@ function onJoyMove(dir: { x: number; z: number }) {
 }
 function onJoyEnd() {
   game?.setJoystick(0, 0);
+}
+function onTowerUpgrade() {
+  game?.upgradeSelectedTower();
+}
+function onTowerClose() {
+  game?.deselectTower();
 }
 function onToggleMute() {
   muted.value = !muted.value;

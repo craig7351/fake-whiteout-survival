@@ -216,13 +216,18 @@ export const CONFIG = {
       basic: { model: '/models/enemies/Zombie_Basic.gltf', size: 2.3, hp: 8, speed: 3.0, dmg: 7, reward: 12, pool: 10 },
       skeleton: { model: '/models/enemies/Characters_Skeleton.gltf', size: 2.3, hp: 5, speed: 4.8, dmg: 5, reward: 14, pool: 8 },
       chubby: { model: '/models/enemies/Zombie_Chubby.gltf', size: 2.9, hp: 24, speed: 1.9, dmg: 14, reward: 30, pool: 6 },
+      boss: { model: '/models/enemies/Zombie_Ribcage.gltf', size: 5.2, hp: 140, speed: 1.7, dmg: 32, reward: 250, pool: 1 },
     },
+    /** 每幾波出現一隻 Boss */
+    bossEvery: 3,
     /** 波次：數量與血量隨波遞增 */
     wave: { baseCount: 6, perWaveAdd: 3, hpPerWave: 1.5, spawnGap: 0.8, clearReward: 100, rewardPerWave: 30 },
     /** 箭塔（單體、快） */
-    tower: { cost: 250, range: 10, dmg: 4, interval: 0.45, size: 3.2 },
+    tower: { cost: 250, range: 20, dmg: 4, interval: 0.45, size: 3.2 },
     /** 砲塔（慢、範圍爆擊濺射） */
-    cannon: { cost: 450, range: 11, dmg: 6, interval: 1.2, splash: 3.5, size: 4.0 },
+    cannon: { cost: 450, range: 22, dmg: 6, interval: 1.2, splash: 3.5, size: 4.0 },
+    /** 塔最大升級等級（每級提升傷害與射速） */
+    towerMaxLevel: 4,
   },
 };
 
