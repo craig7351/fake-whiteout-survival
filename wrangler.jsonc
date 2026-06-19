@@ -1,0 +1,16 @@
+{
+  // Cloudflare Pages 設定：部署到 fake-whiteout-survival.pages.dev
+  // 部署：wrangler pages deploy（或 dashboard 連 Git 自動部署）
+  "name": "fake-whiteout-survival",
+  "compatibility_date": "2025-01-01",
+  "pages_build_output_dir": "./dist",
+  // 全球排行榜/統計/留言/在線 用 D1（functions/api/* 透過 env.DB 存取）
+  // 執行 `wrangler d1 create fake-whiteout-survival-db` 後，把回傳的 database_id 填到下方
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "fake-whiteout-survival-db",
+      "database_id": "974d55d0-f90b-41d3-a47e-e8169f81af33"
+    }
+  ]
+}

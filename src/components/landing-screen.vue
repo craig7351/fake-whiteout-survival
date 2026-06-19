@@ -111,9 +111,22 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, onMounted, onUnmounted } from 'vue';
 import { ACHIEVEMENTS, loadAchievements } from '../game/achievements';
-import { getTotals, getLeaderboard, getMessages, postMessage, getName, setName, getOnline } from '../game/community';
+import {
+  getTotals,
+  getLeaderboard,
+  getMessages,
+  postMessage,
+  getName,
+  setName,
+  getOnline,
+  fetchTotals,
+  fetchLeaderboard,
+  fetchMessages,
+  fetchOnline,
+  sendHeartbeat,
+} from '../game/community';
 
 const emit = defineEmits<{ (e: 'start'): void }>();
 
@@ -121,12 +134,34 @@ const unlocked = loadAchievements();
 const achievements = ACHIEVEMENTS.map((a) => ({ ...a, got: unlocked.has(a.id) }));
 const unlockedCount = computed(() => achievements.filter((a) => a.got).length);
 
+/** 先顯示本機資料，再用後端（若有部署）覆蓋 */
 const totals = ref(getTotals());
 const leaderboard = ref(getLeaderboard(10));
 const online = ref(getOnline());
 const name = ref(getName());
 const messages = ref(getMessages());
 const msgText = ref('');
+let hbTimer: number | undefined;
+
+async function refresh() {
+  const [t, lb, msg, on] = await Promise.all([fetchTotals(), fetchLeaderboard(10), fetchMessages(), fetchOnline()]);
+  if (t) totals.value = t;
+  if (lb) leaderboard.value = lb;
+  if (msg) messages.value = msg;
+  if (on) online.value = on.online;
+}
+
+onMounted(() => {
+  sendHeartbeat();
+  void refresh();
+  hbTimer = window.setInterval(() => {
+    sendHeartbeat();
+    void refresh();
+  }, 60000);
+});
+onUnmounted(() => {
+  if (hbTimer !== undefined) clearInterval(hbTimer);
+});
 
 function fmt(n: number) {
   return n.toLocaleString();
@@ -140,5 +175,8 @@ function onPost() {
   postMessage(name.value, msgText.value);
   msgText.value = '';
   messages.value = getMessages();
+  void fetchMessages().then((m) => {
+    if (m) messages.value = m;
+  });
 }
 </script>

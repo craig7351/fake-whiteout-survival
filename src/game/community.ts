@@ -7,6 +7,39 @@ const TOTALS_KEY = 'fake-whiteout:totals';
 const LB_KEY = 'fake-whiteout:leaderboard';
 const MSG_KEY = 'fake-whiteout:messages';
 const NAME_KEY = 'fake-whiteout:name';
+const DEVICE_KEY = 'fake-whiteout:deviceId';
+
+/** 後端 API 同源 /api（部署 Cloudflare Pages Functions 後生效；本機 dev 無 /api 則自動回退本機） */
+const BASE = '/api';
+function deviceId(): string {
+  let id = localStorage.getItem(DEVICE_KEY);
+  if (!id) {
+    id = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2);
+    localStorage.setItem(DEVICE_KEY, id);
+  }
+  return id;
+}
+/** fire-and-forget POST（離線/失敗忽略） */
+function post(path: string, body: unknown) {
+  try {
+    void fetch(`${BASE}${path}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...(body as object), deviceId: deviceId() }),
+    }).catch(() => {});
+  } catch {
+    /* ignore */
+  }
+}
+async function getJSON<T>(path: string): Promise<T | null> {
+  try {
+    const res = await fetch(`${BASE}${path}`);
+    if (!res.ok) return null;
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -42,7 +75,10 @@ export function addTotals(d: Partial<Totals>) {
     monsters: t.monsters + (d.monsters ?? 0),
     runs: t.runs + (d.runs ?? 0),
   });
+  post('/totals', { money: d.money ?? 0, cows: d.cows ?? 0, monsters: d.monsters ?? 0, runs: d.runs ?? 0 });
 }
+/** 全服累計（後端）；失敗回 null */
+export const fetchTotals = () => getJSON<Totals>('/totals');
 
 /* ===== 排行榜 ===== */
 export interface RunRec {
@@ -60,7 +96,10 @@ export function submitRun(r: RunRec) {
   const all = read<RunRec[]>(LB_KEY, []);
   all.push(r);
   write(LB_KEY, all.sort(byScore).slice(0, 50));
+  post('/run', { name: r.name, wave: r.wave, money: r.money, won: r.won });
 }
+/** 全球排行榜（後端）；失敗回 null */
+export const fetchLeaderboard = (limit = 10) => getJSON<RunRec[]>(`/leaderboard?limit=${limit}`);
 
 /* ===== 留言板 ===== */
 export interface Msg {
@@ -74,10 +113,14 @@ export function getMessages(): Msg[] {
 export function postMessage(name: string, text: string) {
   const t = text.trim().slice(0, 120);
   if (!t) return;
+  const nm = name.trim().slice(0, 12) || '匿名';
   const all = read<Msg[]>(MSG_KEY, []);
-  all.push({ name: name.trim().slice(0, 12) || '匿名', text: t, at: Date.now() });
+  all.push({ name: nm, text: t, at: Date.now() });
   write(MSG_KEY, all.slice(-200));
+  post('/messages', { name: nm, text: t });
 }
+/** 全球留言（後端）；失敗回 null */
+export const fetchMessages = () => getJSON<Msg[]>('/messages');
 
 /* ===== 玩家暱稱 ===== */
 export function getName(): string {
@@ -92,7 +135,14 @@ export function setName(n: string) {
   localStorage.setItem(NAME_KEY, n.trim().slice(0, 12) || '玩家');
 }
 
-/* ===== 線上人數（本機離線版：只有你） ===== */
+/* ===== 線上人數 ===== */
+/** 本機離線預設值 */
 export function getOnline(): number {
   return 1;
+}
+/** 後端線上人數；失敗回 null */
+export const fetchOnline = () => getJSON<{ online: number }>('/online');
+/** 心跳上報（在線標記） */
+export function sendHeartbeat() {
+  post('/heartbeat', {});
 }
