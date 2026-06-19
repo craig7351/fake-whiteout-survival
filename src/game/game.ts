@@ -375,7 +375,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
    * 模型非阻塞載入，完成後再蓋柵欄（載入失敗則 fallback 程序化木欄）。
    */
   async function setupFences() {
-    const center = await loadProp(scene, '/models/fence/Fence_Center.gltf', 2.0);
+    const center = await loadProp(scene, '/models/fence/Fence_Center.glb', 2.0);
     if (center) center.isVisible = false;
     buildShopFence(scene, center, wood);
     buildPastureFence(scene, center, wood, CONFIG.pasture, [{ side: 'south', center: CONFIG.pasture.cx, half: 3 }]);
@@ -935,14 +935,14 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       loadProp(scene, '/models/winter/gold_bar.glb', BAR_SIZE),
       loadAnimatedFleet(scene, '/models/cow_animated.glb', CONFIG.cow.size),
       /** 牧場2 怪物：殭屍/海盜 Mako（含 Idle/Walk/Death 動畫） */
-      loadAnimatedFleet(scene, '/models/enemies/Characters_Mako.gltf', CONFIG.cow.size),
+      loadAnimatedFleet(scene, '/models/enemies/Characters_Mako.glb', CONFIG.cow.size),
       /** 牧羊犬（含 Idle/Walk/Run 動畫） */
-      loadAnimatedFleet(scene, '/models/Characters_GermanShepherd.gltf', CONFIG.dog.size),
+      loadAnimatedFleet(scene, '/models/Characters_GermanShepherd.glb', CONFIG.dog.size),
       /** 員工：獵人(Henry)／收銀員(Anne)，含 Idle/Walk/Sword 動畫 */
-      loadAnimatedFleet(scene, '/models/Characters_Henry.gltf', CONFIG.hunter.size),
+      loadAnimatedFleet(scene, '/models/Characters_Henry.glb', CONFIG.hunter.size),
       /** 收銀員：壽司兔（含 Idle/Walk/Idle_Holding 等動作） */
-      loadAnimatedFleet(scene, '/models/Rabbit_Pink.gltf', CONFIG.cashier.size),
-      loadCharacter(scene, '/models/Characters_Shaun_SingleWeapon.gltf', CONFIG.player.height),
+      loadAnimatedFleet(scene, '/models/Rabbit_Pink.glb', CONFIG.cashier.size),
+      loadCharacter(scene, '/models/Characters_Shaun_SingleWeapon.glb', CONFIG.player.height),
       loadAnimatedFleet(scene, '/models/customers/Character_Female_1.glb', CONFIG.customer.height),
       loadAnimatedFleet(scene, '/models/customers/Character_Female_2.glb', CONFIG.customer.height),
       loadAnimatedFleet(scene, '/models/customers/Character_Male_1.glb', CONFIG.customer.height),
@@ -968,7 +968,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       }
     });
     /** 紅磚圍牆：沿院子周邊砌兩層磚（西側留缺口對齊走道），掛在 houseHolder 上 */
-    void loadProp(scene, '/models/bricks_red.gltf', BRICK_SIZE).then((b) => {
+    void loadProp(scene, '/models/bricks_red.glb', BRICK_SIZE).then((b) => {
       if (b) {
         b.isVisible = false;
         buildBrickYard(b, houseHolder);
@@ -1039,7 +1039,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       }
     });
     /** 砲塔炸彈投射物池 */
-    void loadProp(scene, '/models/prop_bomb.gltf', 1.3).then((m) => {
+    void loadProp(scene, '/models/prop_bomb.glb', 1.3).then((m) => {
       if (!m) return;
       m.isVisible = false;
       bombSrc = m;
