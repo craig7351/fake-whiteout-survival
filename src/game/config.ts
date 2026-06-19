@@ -96,13 +96,22 @@ export const CONFIG = {
     x: 10,
     z: 8,
     cost: 1000,
-    /** 房子(inn)出現位置（院子南側、靠店面） */
-    hx: 24,
-    hz: -2,
+    /** 房子(inn)位置＝院子正中央 */
+    hx: 28.5,
+    hz: -8.5,
     /** 模型正規化最長邊 */
     size: 12,
     /** 紅磚圍牆院子範圍：西牆貼店面東側留入口，北推到牧場1 邊緣、東外擴 */
     yard: { minX: 13, maxX: 44, minZ: -28, maxZ: 11 },
+    /** 殭屍入口：東牆缺口（z 範圍中心/半寬） */
+    zombieGap: { center: -8.5, half: 4 },
+    /** 4 個塔位（院子四角,內縮）：箭塔/砲塔交錯 */
+    towerPads: [
+      { x: 16.5, z: -24.5, type: 'arrow' as const },
+      { x: 40.5, z: -24.5, type: 'cannon' as const },
+      { x: 16.5, z: 7.5, type: 'cannon' as const },
+      { x: 40.5, z: 7.5, type: 'arrow' as const },
+    ],
   },
 
   /** 牛 */
@@ -191,6 +200,25 @@ export const CONFIG = {
     upperRadius: 30,
     /** 平滑跟隨玩家的速度 */
     follow: 4,
+  },
+
+  /** 房子防禦戰：蓋好房子後一波波殭屍從東門攻打房子，蓋塔防守 */
+  defense: {
+    houseHp: 200,
+    houseRegen: 12, // 準備期每秒回血
+    prepSec: 14, // 每波之間的準備時間
+    firstDelay: 8, // 蓋好房子後第一波延遲
+    repairCost: 400, // 房子毀損後修復費用
+    /** 殭屍 */
+    zombie: { size: 2.3, speed: 3.0, hp: 8, dmg: 7, attackInterval: 0.9, attackRange: 2.6, deathSec: 1.2, reward: 12 },
+    /** 波次：數量與血量隨波遞增 */
+    wave: { baseCount: 6, perWaveAdd: 3, hpPerWave: 1.5, spawnGap: 0.8, clearReward: 100, rewardPerWave: 30 },
+    /** 箭塔（單體、快） */
+    tower: { cost: 250, range: 10, dmg: 4, interval: 0.45, size: 3.2 },
+    /** 砲塔（慢、範圍爆擊濺射） */
+    cannon: { cost: 450, range: 11, dmg: 6, interval: 1.2, splash: 3.5, size: 4.0 },
+    /** 同時最多殭屍數（效能上限） */
+    maxZombies: 20,
   },
 };
 

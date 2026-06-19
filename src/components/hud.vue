@@ -43,6 +43,26 @@
     </div>
   </div>
 
+  <!-- 房子防禦戰：上方波次提示 + 房子血條 -->
+  <div
+    v-if="stats.defenseActive"
+    class="absolute left-1/2 top-20 z-20 flex -translate-x-1/2 flex-col items-center gap-1"
+  >
+    <div class="rounded-xl bg-black/65 px-4 py-1.5 text-center text-sm font-black text-white backdrop-blur-md ring-1 ring-white/15 sm:text-base">
+      {{ stats.waveLabel }}
+    </div>
+    <div class="flex items-center gap-2">
+      <span class="text-lg">🏠</span>
+      <div class="h-3.5 w-44 overflow-hidden rounded-full bg-black/45 ring-1 ring-white/10 sm:w-56">
+        <div
+          class="h-full rounded-full transition-[width] duration-150"
+          :class="houseRatio > 0.5 ? 'bg-emerald-400' : houseRatio > 0.25 ? 'bg-amber-400' : 'bg-rose-500'"
+          :style="{ width: `${houseRatio * 100}%` }"
+        />
+      </div>
+    </div>
+  </div>
+
   <!-- 受擊紅光暈（被牛攻擊時畫面邊緣泛紅） -->
   <div
     class="pointer-events-none absolute inset-0 z-30"
@@ -80,6 +100,7 @@ import type { GameStats } from '../game/game';
 
 const props = defineProps<{ stats: GameStats }>();
 const hpRatio = computed(() => (props.stats.maxHp > 0 ? Math.max(0, Math.min(1, props.stats.hp / props.stats.maxHp)) : 0));
+const houseRatio = computed(() => (props.stats.houseMaxHp > 0 ? Math.max(0, Math.min(1, props.stats.houseHp / props.stats.houseMaxHp)) : 0));
 /** 避開瀏海/動態島 */
 const safeTop = { top: 'max(0.75rem, env(safe-area-inset-top))' };
 </script>

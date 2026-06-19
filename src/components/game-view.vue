@@ -110,6 +110,10 @@ const stats = reactive<GameStats>({
   weaponEmoji: '🗡️',
   weaponName: '大砍刀',
   nearUpgrade: null,
+  defenseActive: false,
+  houseHp: 0,
+  houseMaxHp: 0,
+  waveLabel: '',
 });
 
 let game: GameHandle | undefined;
