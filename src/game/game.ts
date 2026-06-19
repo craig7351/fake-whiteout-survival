@@ -35,6 +35,7 @@ const TABLE_TOP_THICK = 0.18;
 const COUNTER_TOP_Y = TABLE_LEG_H + TABLE_TOP_THICK; // 攤位桌面
 const MEAT_SIZE = 0.95; // 肉模型正規化最長邊（攤位/顧客手上，比照原專案大小）
 const CUSTOMER_MEAT = 5; // 每位顧客一次最多買/拿幾片肉
+const BRICK_SIZE = 1.5; // 房子院子紅磚塊邊長
 const BAR_SIZE = 1.05; // 金條正規化最長邊（收銀台金條，比照原專案大小）
 /** 顧客買到肉時隨機冒的開心 emoji */
 const HAPPY_EMOJIS = ['😋', '😄', '🥳', '❤️', '👍', '🤤'];
@@ -363,6 +364,19 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   let hunterFleet: AnimatedFleet | null = null;
   let cashierFleet: AnimatedFleet | null = null;
 
+  /** ===== 房子（牧場2 對面，買下後炸地長出 + 紅磚圍牆院子） ===== */
+  const houseStation = new BuyStation(scene, CONFIG.house.x, CONFIG.house.z, CONFIG.house.cost, '🏠', '已蓋好房子');
+  let housePaid = 0;
+  let houseBought = false;
+  let inn: Mesh | null = null;
+  let innGrowT = 1; // 長出動畫進度（<1 表示生長中）
+  /** 房子實心碰撞箱半邊長（載入後由包圍盒推得；0＝尚未載入不碰撞） */
+  let innHalfX = 0;
+  let innHalfZ = 0;
+  /** 紅磚圍牆掛在此節點上，買下房子後一次顯示 */
+  const houseHolder = new TransformNode('house-yard', scene);
+  houseHolder.setEnabled(false);
+
   /** ===== 販售攤位 ===== */
   buildTable(scene, wood, CONFIG.counter.x, CONFIG.counter.z);
   makeSign(scene, '🥩 販售', CONFIG.counter.x, 2.5, CONFIG.counter.z);
@@ -586,7 +600,10 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   const counterCap = () => Infinity; // 攤位容量無上限
   const price = () => CONFIG.counter.price;
   const attackDamage = () => WEAPONS[equipped].damage;
-  const spawnInterval = () => CONFIG.customer.spawnSec;
+  /** 招攬客流升級：等級越高，顧客生成越快、同場上限越多 */
+  const flowLevel = () => levels['flow'] ?? 0;
+  const spawnInterval = () => CONFIG.customer.spawnSec / (1 + flowLevel() * 0.35);
+  const maxCustomers = () => Math.min(CONFIG.customer.max, 12 + flowLevel() * 1);
   const playerSpeed = () => CONFIG.player.speed;
 
   /** 攤位肉/收銀金條的堆疊池上限（拉高到視覺上等同無限制，會一直往上疊） */
@@ -705,6 +722,25 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     /** 場外北極熊（純氣氛，立在牧場後方） */
     void loadProp(scene, '/models/winter/polar_bear.glb', 3.4).then((b) => {
       if (b) b.position.set(-12, 0, P.cz - P.halfZ - 6);
+    });
+    /** 房子（東側樹林，初始隱藏；買下後炸地長出） */
+    void loadProp(scene, '/models/fantasy_inn.glb', CONFIG.house.size).then((m) => {
+      if (m) {
+        m.position.set(CONFIG.house.hx, 0, CONFIG.house.hz);
+        m.setEnabled(false);
+        inn = m;
+        /** 由包圍盒推實心碰撞箱（含玩家半徑緩衝） */
+        const ext = m.getBoundingInfo().boundingBox.extendSize;
+        innHalfX = ext.x + 0.6;
+        innHalfZ = ext.z + 0.6;
+      }
+    });
+    /** 紅磚圍牆：沿院子周邊砌兩層磚（西側留缺口對齊走道），掛在 houseHolder 上 */
+    void loadProp(scene, '/models/bricks_red.gltf', BRICK_SIZE).then((b) => {
+      if (b) {
+        b.isVisible = false;
+        buildBrickYard(b, houseHolder);
+      }
     });
 
     const meatSrc = meatMesh ?? fallbackMeat(scene);
@@ -1452,6 +1488,37 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       }
     }
 
+    /** --- 房子框：付滿在東側炸地長出一棟房子 --- */
+    if (!houseBought) {
+      const Hs = CONFIG.house;
+      if (near(Hs.x, Hs.z, 2.0) && money > 0) {
+        const pay = Math.min(Hs.cost - housePaid, money, (Hs.cost / WEAPON_BUY_TIME) * dt);
+        if (pay > 0) {
+          housePaid += pay;
+          money -= pay;
+          payFlyAccum += pay;
+          while (payFlyAccum >= PAY_PER_BAR) {
+            payFlyAccum -= PAY_PER_BAR;
+            spawnPayFly(Hs.x, Hs.z);
+          }
+        }
+        houseStation.setProgress(Hs.cost > 0 ? housePaid / Hs.cost : 1);
+        if (housePaid >= Hs.cost - 0.001) {
+          houseBought = true;
+          houseStation.setDone();
+          revealHouse();
+          sound.upgrade();
+        }
+      }
+    }
+
+    /** --- 房子長出動畫（買下後由小變大） --- */
+    if (innGrowT < 1 && inn) {
+      innGrowT = Math.min(1, innGrowT + dt / 0.7);
+      const e = 1 - Math.pow(1 - innGrowT, 3); // easeOutCubic
+      inn.scaling.setAll(e);
+    }
+
     /** --- 牧羊犬／員工行為 --- */
     updateDogs(dt);
     updateWorkers(dt);
@@ -1459,7 +1526,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     /** --- 顧客生成 --- */
     spawnAccum += dt;
     const active = customers.filter((c) => c.root.isEnabled());
-    if (spawnAccum >= spawnInterval() && active.length < CONFIG.customer.max) {
+    if (spawnAccum >= spawnInterval() && active.length < maxCustomers()) {
       spawnAccum = 0;
       const free = customers.find((c) => !c.root.isEnabled());
       if (free) {
@@ -1690,6 +1757,45 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     /** 特效：靠近店面側炸開（玩家看得到）+ 畫面震動 + 音效 */
     spawnExplosion(CONFIG.pasture2.cx + CONFIG.pasture2.halfX - 4, 1.5, -4);
     spawnExplosion(-11, 1.5, -6);
+    camShake = 1;
+    sound.boom();
+  }
+
+  /** 沿院子周邊砌兩層紅磚（西側留缺口對齊走道），掛在 houseHolder 上 */
+  function buildBrickYard(brick: Mesh, parent: TransformNode) {
+    const { minX, maxX, minZ, maxZ } = CONFIG.house.yard;
+    const put = (x: number, z: number) => {
+      for (let r = 0; r < 2; r++) {
+        const inst = brick.createInstance('brick');
+        inst.isPickable = false;
+        inst.position.set(x, r * BRICK_SIZE, z);
+        inst.parent = parent;
+      }
+    };
+    const westGap = (z: number) => z >= -10 && z <= -4; // 對齊店面東門走道
+    for (let x = minX; x <= maxX + 0.01; x += BRICK_SIZE) {
+      put(x, minZ);
+      put(x, maxZ);
+    }
+    for (let z = minZ + BRICK_SIZE; z <= maxZ - BRICK_SIZE + 0.01; z += BRICK_SIZE) {
+      if (!westGap(z)) put(minX, z); // 西牆（留入口）
+      put(maxX, z); // 東牆
+    }
+  }
+
+  /** 買下房子：炸開東側樹林、房子從小長到大、顯示紅磚院子 */
+  function revealHouse() {
+    const H = CONFIG.house;
+    const y = H.yard;
+    treeField?.hideRegion(y.minX - 2, y.maxX + 2, y.minZ - 2, y.maxZ + 2);
+    houseHolder.setEnabled(true);
+    if (inn) {
+      inn.setEnabled(true);
+      inn.scaling.setAll(0.01);
+      innGrowT = 0; // 觸發長出動畫
+    }
+    spawnExplosion(H.hx, 1.6, H.hz);
+    spawnExplosion(H.hx - 3, 1.4, H.hz + 3);
     camShake = 1;
     sound.boom();
   }
@@ -2031,31 +2137,64 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     }
   }
 
-  /** 把玩家限制在「店面 ∪ 牧場 ∪ 連通走廊（含解鎖後的牧場2）」範圍內 */
+  /**
+   * 把玩家限制在「店面 ∪ 牧場 ∪ 走廊 ∪ 院子」的合法矩形聯集內：
+   * 落在任一矩形內就放行；否則夾到「最近的合法矩形」邊界（等同四周都有牆，不會穿牆/被傳送）。
+   * 最後再把玩家推出房子實心碰撞箱。
+   */
   function clampPlayer(p: Vector3) {
     const a = CONFIG.arenaHalf;
-    const inShop = p.x >= -a + 1 && p.x <= a - 1 && p.z >= -a + 1 && p.z <= a - 1;
-    /** 連通走廊：x 窄、z 從店面後門（-a+1）一路重疊到牧場內部，確保可通行 */
-    const inCorridor = Math.abs(p.x) < 2.6 && p.z <= -a + 2 && p.z >= P.cz + P.halfZ - 1.2;
-    const inPasture =
-      p.x >= P.cx - P.halfX + 0.8 &&
-      p.x <= P.cx + P.halfX - 0.8 &&
-      p.z >= P.cz - P.halfZ + 0.8 &&
-      p.z <= P.cz + P.halfZ - 0.8;
-    /** 牧場2 與西側走道：買炸藥解鎖後才開放 */
     const P2 = CONFIG.pasture2;
-    const inWestCorridor =
-      pasture2Unlocked && p.x <= -a + 2 && p.x >= P2.cx + P2.halfX - 1.2 && p.z <= -4 && p.z >= -10;
-    const inPasture2 =
-      pasture2Unlocked &&
-      p.x >= P2.cx - P2.halfX + 0.8 &&
-      p.x <= P2.cx + P2.halfX - 0.8 &&
-      p.z >= P2.cz - P2.halfZ + 0.8 &&
-      p.z <= P2.cz + P2.halfZ - 0.8;
-    if (inShop || inCorridor || inPasture || inWestCorridor || inPasture2) return;
-    /** 超出則夾回店面範圍（最常見） */
-    p.x = Math.max(-a + 1, Math.min(a - 1, p.x));
-    p.z = Math.max(-a + 1, Math.min(a - 1, p.z));
+    const y = CONFIG.house.yard;
+    /** 合法矩形 [x0,x1,z0,z1] */
+    const R: [number, number, number, number][] = [
+      [-a + 1, a - 1, -a + 1, a - 1], // 店面
+      [-2.6, 2.6, P.cz + P.halfZ - 1.2, -a + 2], // 往牧場1 北走道
+      [P.cx - P.halfX + 0.8, P.cx + P.halfX - 0.8, P.cz - P.halfZ + 0.8, P.cz + P.halfZ - 0.8], // 牧場1
+    ];
+    if (pasture2Unlocked) {
+      R.push([P2.cx + P2.halfX - 1.2, -a + 2, -10, -4]); // 往牧場2 西走道
+      R.push([P2.cx - P2.halfX + 0.8, P2.cx + P2.halfX - 0.8, P2.cz - P2.halfZ + 0.8, P2.cz + P2.halfZ - 0.8]); // 牧場2
+    }
+    if (houseBought) {
+      R.push([a - 2, y.minX + 1.2, -10, -4]); // 往房子 東走道
+      R.push([y.minX + 0.8, y.maxX - 0.8, y.minZ + 0.8, y.maxZ - 0.8]); // 院子
+    }
+    const eps = 0.001;
+    let inside = false;
+    for (const r of R) {
+      if (p.x >= r[0] - eps && p.x <= r[1] + eps && p.z >= r[2] - eps && p.z <= r[3] + eps) {
+        inside = true;
+        break;
+      }
+    }
+    if (!inside) {
+      let bx = p.x;
+      let bz = p.z;
+      let bd = Infinity;
+      for (const r of R) {
+        const cx = Math.max(r[0], Math.min(r[1], p.x));
+        const cz = Math.max(r[2], Math.min(r[3], p.z));
+        const d = (cx - p.x) ** 2 + (cz - p.z) ** 2;
+        if (d < bd) {
+          bd = d;
+          bx = cx;
+          bz = cz;
+        }
+      }
+      p.x = bx;
+      p.z = bz;
+    }
+    /** 推出房子實心碰撞箱（撞到就沿最短邊推開） */
+    if (houseBought && innHalfX > 0) {
+      const H = CONFIG.house;
+      const dx = p.x - H.hx;
+      const dz = p.z - H.hz;
+      if (Math.abs(dx) < innHalfX && Math.abs(dz) < innHalfZ) {
+        if (innHalfX - Math.abs(dx) < innHalfZ - Math.abs(dz)) p.x = H.hx + (dx >= 0 ? innHalfX : -innHalfX);
+        else p.z = H.hz + (dz >= 0 ? innHalfZ : -innHalfZ);
+      }
+    }
   }
 
   engine.runRenderLoop(() => scene.render());
@@ -2092,6 +2231,9 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       workers.forEach((w) => w.root.dispose());
       hunterStation.dispose();
       cashierStation.dispose();
+      houseStation.dispose();
+      inn?.dispose();
+      houseHolder.dispose();
       hitFx.dispose();
       killFx.dispose();
       muzzleFx.dispose();
@@ -2232,8 +2374,8 @@ function buildShopFence(scene: Scene, center: Mesh | null, wood: StandardMateria
   for (let p = -half; p <= half; p += seg) {
     if (!(Math.abs(p) < 3)) fenceSeg(scene, center, wood, p, half, true, seg); // 前門缺口
     if (!(Math.abs(p) < 3)) fenceSeg(scene, center, wood, p, -half, true, seg); // 後門（往牧場1）缺口
-    if (!(p <= -half + 4)) fenceSeg(scene, center, wood, -half, p, false, seg); // 西牆左上缺口（往牧場2）
-    fenceSeg(scene, center, wood, half, p, false, seg);
+    if (!(p >= -10 && p <= -4)) fenceSeg(scene, center, wood, -half, p, false, seg); // 西牆缺口（往牧場2 走道 z∈[-10,-4]）
+    if (!(p >= -10 && p <= -4)) fenceSeg(scene, center, wood, half, p, false, seg); // 東牆缺口（往房子院子 z∈[-10,-4]）
   }
 }
 

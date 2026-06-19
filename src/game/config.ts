@@ -1,7 +1,7 @@
 /** 雪地肉舖經營：可調參數 */
 export const CONFIG = {
-  /** 店面圍場半徑（柵欄圍出的營業範圍；手機緊湊佈局） */
-  arenaHalf: 9,
+  /** 店面圍場半徑（柵欄圍出的營業範圍） */
+  arenaHalf: 12,
 
   player: {
     /** 基礎移動速度（可被升級提升） */
@@ -31,9 +31,9 @@ export const CONFIG = {
 
   /** 牧場：店面後方圍出的牛圈（放大版），牛持續重生供玩家獵殺取肉 */
   pasture: {
-    /** 中心與半邊長（位於店面北側，z 為負；手機緊湊版、拉近店面） */
+    /** 中心與半邊長（位於店面北側，z 為負；南緣須在放大後店面後牆 -arenaHalf 之北） */
     cx: 0,
-    cz: -18,
+    cz: -21,
     halfX: 11,
     halfZ: 8,
   },
@@ -48,15 +48,15 @@ export const CONFIG = {
 
   /** 炸藥購買框：站在框內持續付款，付滿即炸開牧場2 */
   dynamite: {
-    x: -4,
-    z: -7,
+    x: -7,
+    z: -10,
     cost: 500,
   },
 
   /** 牧羊犬購買框：付滿 💲300 召喚一隻狗，會自動把地上的肉撿回攤位 */
   dog: {
-    x: 5,
-    z: -5,
+    x: 10,
+    z: 0,
     cost: 300,
     /** 模型正規化最長邊（放大 1.7 倍：1.8 × 1.7） */
     size: 3.06,
@@ -72,8 +72,8 @@ export const CONFIG = {
 
   /** 自動化員工：獵人（自動打怪）與收銀員（自動收錢） */
   hunter: {
-    x: 1,
-    z: -7,
+    x: 6,
+    z: -10,
     cost: 700,
     size: 3.4, // 模型高度（放大 1.7 倍：2.0 × 1.7）
     speed: 6,
@@ -82,13 +82,27 @@ export const CONFIG = {
     range: 2.6, // 攻擊距離
   },
   cashier: {
-    x: 7,
-    z: 1,
+    x: 10,
+    z: 4,
     cost: 400,
     size: 2.0,
     speed: 6,
     /** 站到收銀台旁多近開始收錢 */
     reach: 2.2,
+  },
+
+  /** 房子購買框：付滿 💲1000，在牧場2 對面（東側樹林）炸出空地、長出一棟房子 */
+  house: {
+    x: 10,
+    z: 8,
+    cost: 1000,
+    /** 房子(inn)出現位置（院子南側、靠店面） */
+    hx: 24,
+    hz: -2,
+    /** 模型正規化最長邊 */
+    size: 12,
+    /** 紅磚圍牆院子範圍：西牆貼店面東側留入口，北推到牧場1 邊緣、東外擴 */
+    yard: { minX: 13, maxX: 44, minZ: -28, maxZ: 11 },
   },
 
   /** 牛 */
@@ -155,7 +169,7 @@ export const CONFIG = {
     max: 24,
     spawnSec: 1.4,
     speed: 4.2,
-    gate: { x: 0, z: 11 },
+    gate: { x: 0, z: 15 },
     /** 角色模型高度 */
     height: 1.7,
     /** 模型面向修正（若走路時背對前進方向，改成 Math.PI） */
@@ -194,8 +208,19 @@ export interface UpgradeDef {
   cost: (lvl: number) => number;
 }
 
-/** 升級項目（已全部移除：肉品單價／移動速度／攻擊力／招攬客流） */
-export const UPGRADES: UpgradeDef[] = [];
+/** 升級項目（站到地墊上、錢夠就持續扣款升級，成本指數成長） */
+export const UPGRADES: UpgradeDef[] = [
+  {
+    id: 'flow',
+    name: '招攬客流',
+    emoji: '🚪',
+    desc: '顧客來得更快、更多',
+    x: -9,
+    z: 9,
+    maxLevel: 20,
+    cost: (lvl) => Math.floor(40 * Math.pow(1.45, lvl)),
+  },
+];
 
 /** 武器定義：三種各有不同攻擊力／範圍／速度，踩牧場入口的武器框框即可裝備 */
 export interface WeaponDef {
@@ -241,8 +266,8 @@ export const WEAPONS: WeaponDef[] = [
     ranged: false,
     whirl: true,
     cost: 200,
-    x: -7,
-    z: -4,
+    x: -10,
+    z: -2,
     hand: { x: 0.32, y: 1.0, z: 0.28, rx: -0.5, ry: 0, rz: 0.2 },
   },
   {
@@ -257,8 +282,8 @@ export const WEAPONS: WeaponDef[] = [
     cleave: 3,
     ranged: false,
     cost: 0,
-    x: -7,
-    z: 0,
+    x: -10,
+    z: 2,
     hand: { x: 0.32, y: 1.0, z: 0.3, rx: 1.51, ry: 1.76, rz: 1.35 },
   },
   {
@@ -273,8 +298,8 @@ export const WEAPONS: WeaponDef[] = [
     cleave: 1,
     ranged: true,
     cost: 800,
-    x: -7,
-    z: 4,
+    x: -10,
+    z: 6,
     hand: { x: 0.3, y: 1.0, z: 0.4, rx: 0, ry: 0, rz: 0 },
   },
 ];
