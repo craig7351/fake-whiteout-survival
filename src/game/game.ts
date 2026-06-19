@@ -284,6 +284,7 @@ interface Worker {
 
 /** 殭屍（防禦戰：從東門湧入、走向房子攻擊房子血量） */
 interface Zombie {
+  type: string; // 兵種
   root: TransformNode;
   idle?: AnimationGroup;
   walk?: AnimationGroup;
@@ -296,6 +297,10 @@ interface Zombie {
   z: number;
   hp: number;
   hpMax: number;
+  baseHp: number; // 兵種基礎血（波次再加成）
+  speed: number;
+  dmg: number;
+  reward: number;
   alive: boolean;
   active: boolean; // 是否在場上（從池中啟用）
   dying: number;
@@ -416,7 +421,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   let zombieSpawnAccum = 0;
   let repairPaid = 0; // 毀損後修復付款累計
   const zombies: Zombie[] = [];
-  let zombieFleet: AnimatedFleet | null = null;
+  const zombieFleets: AnimatedFleet[] = [];
   /** 塔來源 mesh（箭塔/砲塔）+ 各塔位狀態 */
   let towerSrc: Mesh | null = null;
   let cannonSrc: Mesh | null = null;
@@ -801,43 +806,50 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         buildBrickYard(b, houseHolder);
       }
     });
-    /** 殭屍池（防禦戰）：預先 instantiate maxZombies 隻，平時停用、開波時啟用 */
-    void loadAnimatedFleet(scene, '/models/enemies/Zombie_Basic.gltf', DEF.zombie.size).then((fl) => {
-      if (!fl) return;
-      zombieFleet = fl;
-      for (let i = 0; i < DEF.maxZombies; i++) {
-        const ent = fl.container.instantiateModelsToScene((n) => `zb${i}_${n}`, false);
-        const holder = new TransformNode(`zombie${i}`, scene);
-        (ent.rootNodes[0] as TransformNode).parent = holder;
-        holder.scaling.setAll(fl.scale);
-        holder.setEnabled(false);
-        ent.rootNodes.forEach((n) => (n as TransformNode).getChildMeshes?.().forEach((m) => (m.isPickable = false)));
-        const g = ent.animationGroups;
-        g.forEach((ag) => ag.stop());
-        const walk = g.find((ag) => /^walk$/i.test(ag.name)) ?? g.find((ag) => /walk|run/i.test(ag.name));
-        const idle = g.find((ag) => /^idle$/i.test(ag.name)) ?? g[0];
-        const attack = g.find((ag) => /idle_attack|attack|punch|bite/i.test(ag.name));
-        const death = g.find((ag) => /death|die/i.test(ag.name));
-        zombies.push({
-          root: holder,
-          idle,
-          walk,
-          attack,
-          death,
-          animState: 'idle',
-          baseScale: fl.scale,
-          yOffset: fl.yOffset,
-          x: 0,
-          z: 0,
-          hp: 0,
-          hpMax: 0,
-          alive: false,
-          active: false,
-          dying: 0,
-          attackAccum: 0,
-        });
-      }
-    });
+    /** 殭屍池（防禦戰）：每種兵種預先 instantiate 一批，平時停用、開波時啟用 */
+    for (const [type, cfg] of Object.entries(DEF.zombieTypes)) {
+      void loadAnimatedFleet(scene, cfg.model, cfg.size).then((fl) => {
+        if (!fl) return;
+        zombieFleets.push(fl);
+        for (let i = 0; i < cfg.pool; i++) {
+          const ent = fl.container.instantiateModelsToScene((n) => `zb_${type}${i}_${n}`, false);
+          const holder = new TransformNode(`zombie_${type}${i}`, scene);
+          (ent.rootNodes[0] as TransformNode).parent = holder;
+          holder.scaling.setAll(fl.scale);
+          holder.setEnabled(false);
+          ent.rootNodes.forEach((n) => (n as TransformNode).getChildMeshes?.().forEach((m) => (m.isPickable = false)));
+          const g = ent.animationGroups;
+          g.forEach((ag) => ag.stop());
+          const walk = g.find((ag) => /^walk$/i.test(ag.name)) ?? g.find((ag) => /walk|run/i.test(ag.name));
+          const idle = g.find((ag) => /^idle$/i.test(ag.name)) ?? g[0];
+          const attack = g.find((ag) => /idle_attack|attack|punch|bite|sword|slash/i.test(ag.name));
+          const death = g.find((ag) => /death|die/i.test(ag.name));
+          zombies.push({
+            type,
+            root: holder,
+            idle,
+            walk,
+            attack,
+            death,
+            animState: 'idle',
+            baseScale: fl.scale,
+            yOffset: fl.yOffset,
+            x: 0,
+            z: 0,
+            hp: 0,
+            hpMax: 0,
+            baseHp: cfg.hp,
+            speed: cfg.speed,
+            dmg: cfg.dmg,
+            reward: cfg.reward,
+            alive: false,
+            active: false,
+            dying: 0,
+            attackAccum: 0,
+          });
+        }
+      });
+    }
     /** 塔模型來源：箭塔 / 砲塔 */
     void loadProp(scene, '/models/winter/tower.glb', DEF.tower.size).then((m) => {
       if (m) {
@@ -2255,15 +2267,24 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     else z.idle?.start(true);
   }
 
+  /** 依波次挑兵種：越後面越可能出骷髏/胖子 */
+  function pickZombieType(): string {
+    const r = Math.random();
+    if (waveNum >= 3 && r < 0.22) return 'chubby';
+    if (waveNum >= 2 && r < 0.5) return 'skeleton';
+    return 'basic';
+  }
+
   /** 從東門啟用一隻池中殭屍 */
   function spawnZombie() {
-    const z = zombies.find((q) => !q.active);
+    const type = pickZombieType();
+    const z = zombies.find((q) => !q.active && q.type === type) ?? zombies.find((q) => !q.active);
     if (!z) return;
     const y = CONFIG.house.yard;
     const gap = CONFIG.house.zombieGap;
     z.x = y.maxX - 0.6;
     z.z = gap.center + (Math.random() * 2 - 1) * (gap.half - 0.5);
-    z.hpMax = DEF.zombie.hp + (waveNum - 1) * DEF.wave.hpPerWave;
+    z.hpMax = z.baseHp + (waveNum - 1) * DEF.wave.hpPerWave;
     z.hp = z.hpMax;
     z.alive = true;
     z.active = true;
@@ -2288,8 +2309,8 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       z.dying = DEF.zombie.deathSec;
       bloodDecals.spawn(z.x, z.z);
       burstAt(killFx, z.x, 1.0, z.z, 24);
-      money += DEF.zombie.reward;
-      floatText.spawn(`+$${DEF.zombie.reward}`, z.x, 2.9, z.z, '#ffcf4a', 1.0);
+      money += z.reward;
+      floatText.spawn(`+$${z.reward}`, z.x, 2.9, z.z, '#ffcf4a', 1.0);
       setZombieAnim(z, 'death');
       sound.kill();
     } else {
@@ -2406,7 +2427,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       const d = Math.hypot(dx, dz) || 1;
       z.root.rotation.y = Math.atan2(dx, dz);
       if (d > stopDist) {
-        const step = Math.min(d - stopDist, DEF.zombie.speed * dt);
+        const step = Math.min(d - stopDist, z.speed * dt);
         z.x += (dx / d) * step;
         z.z += (dz / d) * step;
         setZombieAnim(z, 'walk');
@@ -2415,8 +2436,8 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         z.attackAccum += dt;
         if (z.attackAccum >= DEF.zombie.attackInterval) {
           z.attackAccum = 0;
-          houseHp -= DEF.zombie.dmg;
-          floatText.spawn(`-${DEF.zombie.dmg}`, H.hx + (Math.random() - 0.5) * 3, 7, H.hz + (Math.random() - 0.5) * 3, '#ff6b6b', 0.9);
+          houseHp -= z.dmg;
+          floatText.spawn(`-${z.dmg}`, H.hx + (Math.random() - 0.5) * 3, 7, H.hz + (Math.random() - 0.5) * 3, '#ff6b6b', 0.9);
         }
       }
       z.root.position.set(z.x, z.yOffset, z.z);
@@ -2646,7 +2667,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       houseHolder.dispose();
       houseBar.dispose();
       zombies.forEach((z) => z.root.dispose());
-      zombieFleet?.container.dispose();
+      zombieFleets.forEach((f) => f.container.dispose());
       towerTracers.forEach((t) => t.mesh.dispose());
       towerSrc?.dispose();
       cannonSrc?.dispose();

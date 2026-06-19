@@ -209,16 +209,20 @@ export const CONFIG = {
     prepSec: 14, // 每波之間的準備時間
     firstDelay: 8, // 蓋好房子後第一波延遲
     repairCost: 400, // 房子毀損後修復費用
-    /** 殭屍 */
-    zombie: { size: 2.3, speed: 3.0, hp: 8, dmg: 7, attackInterval: 0.9, attackRange: 2.6, deathSec: 1.2, reward: 12 },
+    /** 殭屍共用參數 */
+    zombie: { attackInterval: 0.9, attackRange: 2.6, deathSec: 1.2 },
+    /** 殭屍兵種：基本 / 骷髏(快脆) / 胖子(肉盾高傷) */
+    zombieTypes: {
+      basic: { model: '/models/enemies/Zombie_Basic.gltf', size: 2.3, hp: 8, speed: 3.0, dmg: 7, reward: 12, pool: 10 },
+      skeleton: { model: '/models/enemies/Characters_Skeleton.gltf', size: 2.3, hp: 5, speed: 4.8, dmg: 5, reward: 14, pool: 8 },
+      chubby: { model: '/models/enemies/Zombie_Chubby.gltf', size: 2.9, hp: 24, speed: 1.9, dmg: 14, reward: 30, pool: 6 },
+    },
     /** 波次：數量與血量隨波遞增 */
     wave: { baseCount: 6, perWaveAdd: 3, hpPerWave: 1.5, spawnGap: 0.8, clearReward: 100, rewardPerWave: 30 },
     /** 箭塔（單體、快） */
     tower: { cost: 250, range: 10, dmg: 4, interval: 0.45, size: 3.2 },
     /** 砲塔（慢、範圍爆擊濺射） */
     cannon: { cost: 450, range: 11, dmg: 6, interval: 1.2, splash: 3.5, size: 4.0 },
-    /** 同時最多殭屍數（效能上限） */
-    maxZombies: 20,
   },
 };
 
