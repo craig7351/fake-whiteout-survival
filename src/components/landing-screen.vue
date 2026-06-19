@@ -197,7 +197,7 @@ async function onDelete(m: Msg) {
   if (!m.id) return; // 本機留言不可刪
   let key = localStorage.getItem(ADMIN_KEY_LS) || '';
   if (!key) {
-    key = window.prompt('輸入版主刪除碼：') || '';
+    key = window.prompt('輸入版主刪除碼（提示：馬生日）：') || '';
     if (!key) return;
   }
   const ok = await deleteMessage(m.id, key);
