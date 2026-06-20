@@ -980,9 +980,12 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   /** 該點是否為「可種樹的空地」（避開店面、牧場、顧客動線） */
   function isClearForDecor(x: number, z: number): boolean {
     const a = CONFIG.arenaHalf;
-    if (Math.abs(x) < a + 2 && Math.abs(z) < a + 2) return false; // 店面（含柵欄外緣）
-    if (x > P.cx - P.halfX - 2 && x < P.cx + P.halfX + 2 && z > P.cz - P.halfZ - 2 && z < P.cz + P.halfZ + 2) return false; // 牧場
-    if (Math.abs(x) < 5 && z > a && z < CONFIG.customer.gate.z + 4) return false; // 顧客進場動線
+    const M = 6; // 加大緩衝，避免（放大後的）樹長進基地
+    if (Math.abs(x) < a + M && Math.abs(z) < a + M) return false; // 店面（含柵欄外緣 + 緩衝）
+    if (x > P.cx - P.halfX - M && x < P.cx + P.halfX + M && z > P.cz - P.halfZ - M && z < P.cz + P.halfZ + M) return false; // 牧場1
+    const P2 = CONFIG.pasture2;
+    if (x > P2.cx - P2.halfX - M && x < P2.cx + P2.halfX + M && z > P2.cz - P2.halfZ - M && z < P2.cz + P2.halfZ + M) return false; // 牧場2
+    if (Math.abs(x) < 6 && z > a && z < CONFIG.customer.gate.z + 4) return false; // 顧客進場動線
     return true;
   }
 
@@ -991,9 +994,9 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
 
   async function scatterNature() {
     /** 真實 Pine Tree（低面數）：只放少量、放大棵；TreeField 用 InstancedMesh 逐棵剔除 */
-    const pine = await loadProp(scene, '/models/pine_tree.glb', 9);
+    const pine = await loadProp(scene, '/models/pine_tree.glb', 13);
     const trees: Mesh[] = pine ? [pine] : [];
-    const RANGE = CONFIG.arenaHalf * 3.6; // 散布半徑（落在地面範圍內）
+    const RANGE = CONFIG.arenaHalf * 4.5; // 散布半徑加大，樹站到基地外圍
 
     if (trees.length) {
       const placements: TreePlacement[] = [];
@@ -1006,7 +1009,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
           x,
           z,
           rotY: Math.random() * Math.PI * 2,
-          scale: 0.9 + Math.random() * 0.5, // 0.9~1.4，再大一點
+          scale: 1.0 + Math.random() * 0.5, // 1.0~1.5，再大一點
         });
       }
       treeField = new TreeField(trees, placements);
