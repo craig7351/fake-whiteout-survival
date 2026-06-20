@@ -144,13 +144,6 @@
 
     <joystick class="absolute bottom-8 left-8 z-10" @move="onJoyMove" @end="onJoyEnd" />
 
-    <!-- 滿版雙擊還原區（卡在放大時，雙擊此列觸發 iOS 原生「還原 100%」；滿版才會還原而非放大進去） -->
-    <div
-      class="absolute bottom-0 left-0 z-30 flex h-7 w-full items-center justify-center bg-slate-900/55 text-[11px] font-bold text-cyan-100/80 backdrop-blur-sm"
-    >
-      👆👆 畫面被放大時：在此列「連點兩下」還原 100%
-    </div>
-
 
     <!-- 塔防開啟說明（買房後跳出） -->
     <div v-if="stats.showDefenseIntro" class="absolute inset-0 z-50 flex items-center justify-center bg-slate-950/65 p-5 backdrop-blur-md">
