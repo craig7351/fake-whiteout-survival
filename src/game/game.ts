@@ -758,6 +758,8 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   const hitFx = makeBurst('hitfx', new Color4(1, 0.95, 0.5, 1), new Color4(1, 0.55, 0.1, 1), 0.15, 0.5, 0.32, 6, true);
   const killFx = makeBurst('killfx', new Color4(0.95, 0.12, 0.12, 1), new Color4(0.45, 0, 0, 1), 0.3, 0.95, 0.6, 8, false);
   const muzzleFx = makeBurst('muzzlefx', new Color4(1, 0.95, 0.6, 1), new Color4(1, 0.75, 0.2, 1), 0.12, 0.4, 0.12, 4, true);
+  /** 藍色冰霜爆裂（緩速炸彈命中用）：偏青白、向外四散、發光 */
+  const frostFx = makeBurst('frostfx', new Color4(0.75, 0.95, 1, 1), new Color4(0.2, 0.55, 1, 1), 0.18, 0.7, 0.55, 7, true);
   /** 漂浮數字（+$／傷害） */
   const floatText = new FloatingText(scene);
   /** ===== 社群統計累計（每幾秒把增量寫進 localStorage 總計 + 更新排行榜） ===== */
@@ -2662,9 +2664,11 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     const b = bombs.find((q) => !q.active && q.slow === slow);
     if (!b) {
       /** 無可用炸彈（模型未載入/池滿）→ 直接在目標生效，確保不漏 */
-      spawnExplosion(tx, 1.2, tz);
-      if (slow) applySlowSplash(tx, tz, DEF.slow.splash, slowFactor);
-      else {
+      if (slow) {
+        burstAt(frostFx, tx, 1.0, tz, 30);
+        applySlowSplash(tx, tz, DEF.slow.splash, slowFactor);
+      } else {
+        spawnExplosion(tx, 1.2, tz);
         const sp2 = DEF.cannon.splash * DEF.cannon.splash;
         for (const z of zombies) if (z.active && z.alive && (z.x - tx) ** 2 + (z.z - tz) ** 2 <= sp2) damageZombie(z, dmg);
       }
@@ -2692,10 +2696,11 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       if (b.t >= 1) {
         b.active = false;
         b.inst.setEnabled(false);
-        spawnExplosion(b.tx, 1.2, b.tz);
         if (b.slow) {
+          burstAt(frostFx, b.tx, 1.0, b.tz, 30); // 藍色冰霜爆裂
           applySlowSplash(b.tx, b.tz, b.splash, b.slowFactor);
         } else {
+          spawnExplosion(b.tx, 1.2, b.tz);
           const sp2 = b.splash * b.splash;
           for (const z of zombies) if (z.active && z.alive && (z.x - b.tx) ** 2 + (z.z - b.tz) ** 2 <= sp2) damageZombie(z, b.dmg);
         }
