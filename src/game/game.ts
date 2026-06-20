@@ -83,6 +83,7 @@ export interface GameStats {
   waveLabel: string;
   /** 目前點選的塔（升級選單用），未選則 null */
   selectedTower: { type: string; level: number; maxLevel: number; cost: number; maxed: boolean; affordable: boolean; detail: string } | null;
+  showDefenseIntro: boolean; // 剛買房子、待玩家確認開啟塔防
 }
 
 export interface GameOptions {
@@ -109,6 +110,8 @@ export interface GameHandle {
   upgradeSelectedTower: () => void;
   /** 取消選取塔（關閉選單） */
   deselectTower: () => void;
+  /** 確認開啟塔防：1 分鐘後迎來第一波 */
+  startDefense: () => void;
   /** Debug：直接跳到第 n 波（必要時先蓋好房子） */
   setWave: (n: number) => void;
 }
@@ -437,6 +440,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   let waveState: 'idle' | 'prep' | 'active' | 'broken' | 'won' = 'idle';
   let waveNum = 0;
   let waveTimer = 0; // prep 倒數
+  let defenseIntroPending = false; // 剛買房子，等玩家在說明視窗按確認才開打
   let zombiesToSpawn = 0; // 本波還要生成幾隻（一般）
   let bossToSpawn = 0; // 本波還要生成幾隻 Boss
   let zombieSpawnAccum = 0;
@@ -1015,7 +1019,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       if (b) b.position.set(-12, 0, P.cz - P.halfZ - 6);
     });
     /** 房子（東側樹林，初始隱藏；買下後炸地長出） */
-    void loadProp(scene, '/models/fantasy_inn.glb', CONFIG.house.size).then((m) => {
+    void loadProp(scene, '/models/home_blue.glb', CONFIG.house.size).then((m) => {
       if (m) {
         m.position.set(CONFIG.house.hx, 0, CONFIG.house.hz);
         m.setEnabled(false);
@@ -1108,7 +1112,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         cannonSrc = m;
       }
     });
-    void loadProp(scene, '/models/firehydrant.glb', DEF.slow.size).then((m) => {
+    void loadProp(scene, '/models/tower_blue.glb', DEF.slow.size).then((m) => {
       if (m) {
         m.isVisible = false;
         slowSrc = m;
@@ -2158,6 +2162,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
                 return { type: pad.type, level: pad.level, maxLevel: DEF.towerMaxLevel, cost, maxed, affordable: money >= cost, detail };
               })()
             : null,
+        showDefenseIntro: defenseIntroPending,
       });
     }
   });
@@ -2319,10 +2324,9 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     camShake = 1;
     sound.boom();
     achieve('house');
-    /** 啟動防禦戰：進入準備期，第一波延遲後開打 */
+    /** 不立刻開打：跳出說明視窗，待玩家確認（startDefense）後 1 分鐘迎來第一波 */
     houseHp = DEF.houseHp;
-    waveState = 'prep';
-    waveTimer = DEF.firstDelay;
+    defenseIntroPending = true;
   }
 
   /** 切換狗的動畫（idle/walk），只在改變時切換 */
@@ -3240,6 +3244,13 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     deselectTower() {
       selectedPad = -1;
       rangeRing.setEnabled(false);
+    },
+    startDefense() {
+      if (!defenseIntroPending) return;
+      defenseIntroPending = false;
+      houseHp = DEF.houseHp;
+      waveState = 'prep';
+      waveTimer = 60; // 1 分鐘後第一波
     },
     setWave(n: number) {
       /** 還沒蓋房子 → 先蓋好（炸地、長房子、紅磚院子、塔位） */

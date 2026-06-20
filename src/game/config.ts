@@ -229,7 +229,7 @@ export const CONFIG = {
     /** 砲塔（慢、範圍爆擊濺射） */
     cannon: { cost: 450, range: 22, dmg: 6, interval: 1.2, splash: 3.5, size: 4.0 },
     /** 緩速塔（消防栓，發射藍色炸彈；落點範圍內殭屍減速，無傷害） */
-    slow: { cost: 350, range: 16, dmg: 0, interval: 1.0, size: 3.0, slowFactor: 0.45, slowSec: 1.6, splash: 5 },
+    slow: { cost: 350, range: 32, dmg: 0, interval: 1.0, size: 5.0, slowFactor: 0.45, slowSec: 1.6, splash: 5 },
     /** 塔最大升級等級（每級提升傷害與射速） */
     towerMaxLevel: 4,
   },

@@ -112,6 +112,28 @@
     </div>
 
     <joystick class="absolute bottom-8 left-8 z-10" @move="onJoyMove" @end="onJoyEnd" />
+
+    <!-- 塔防開啟說明（買房後跳出） -->
+    <div v-if="stats.showDefenseIntro" class="absolute inset-0 z-50 flex items-center justify-center bg-slate-950/65 p-5 backdrop-blur-md">
+      <div class="w-full max-w-sm rounded-2xl bg-slate-900/95 p-5 text-center text-slate-100 shadow-2xl ring-1 ring-cyan-300/30">
+        <div class="mb-2 text-4xl">🏰🛡️</div>
+        <div class="mb-1 text-xl font-black text-cyan-200">塔防模式開啟!</div>
+        <p class="mb-4 text-sm leading-relaxed text-slate-300">
+          房子蓋好了!殭屍即將來襲。<br />
+          在院子四周蓋 🏹箭塔 / 💣砲塔 / ❄️緩速塔 守住房子,<br />
+          撐過 <span class="font-black text-amber-300">30 波</span> 即可破關!
+        </p>
+        <div class="mb-4 rounded-xl bg-cyan-500/10 px-3 py-2 text-sm font-bold text-cyan-200 ring-1 ring-cyan-300/20">
+          ⏱️ 按下確認後 <span class="text-amber-300">1 分鐘</span> 迎來第一波
+        </div>
+        <button
+          class="w-full rounded-xl bg-cyan-500 py-3 text-lg font-black text-white shadow-lg transition hover:bg-cyan-400 active:scale-95"
+          @click="onStartDefense"
+        >
+          確認,開始備戰!
+        </button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -143,6 +165,7 @@ const stats = reactive<GameStats>({
   houseMaxHp: 0,
   waveLabel: '',
   selectedTower: null,
+  showDefenseIntro: false,
 });
 
 let game: GameHandle | undefined;
@@ -220,6 +243,10 @@ function onTowerUpgrade() {
 }
 function onTowerClose() {
   game?.deselectTower();
+}
+function onStartDefense() {
+  sound.enable();
+  game?.startDefense();
 }
 function onToggleMute() {
   muted.value = !muted.value;
