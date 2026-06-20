@@ -211,10 +211,10 @@ export const CONFIG = {
     zombie: { attackInterval: 0.9, attackRange: 2.6, deathSec: 1.2 },
     /** 殭屍兵種：基本 / 骷髏(快脆) / 胖子(肉盾高傷) */
     zombieTypes: {
-      basic: { model: '/models/enemies/Zombie_Basic.glb', size: 2.3, hp: 8, speed: 3.0, dmg: 7, reward: 12, pool: 10 },
-      skeleton: { model: '/models/enemies/Characters_Skeleton.glb', size: 2.3, hp: 5, speed: 4.8, dmg: 5, reward: 14, pool: 8 },
-      chubby: { model: '/models/enemies/Zombie_Chubby.glb', size: 2.9, hp: 24, speed: 1.9, dmg: 14, reward: 30, pool: 6 },
-      boss: { model: '/models/enemies/Zombie_Ribcage.glb', size: 5.2, hp: 140, speed: 1.7, dmg: 32, reward: 250, pool: 1 },
+      basic: { model: '/models/enemies/Zombie_Basic.glb', size: 2.3, hp: 8, speed: 3.0, dmg: 7, reward: 12, pool: 100 },
+      skeleton: { model: '/models/enemies/Characters_Skeleton.glb', size: 2.3, hp: 5, speed: 4.8, dmg: 5, reward: 14, pool: 80 },
+      chubby: { model: '/models/enemies/Zombie_Chubby.glb', size: 2.9, hp: 24, speed: 1.9, dmg: 14, reward: 30, pool: 60 },
+      boss: { model: '/models/enemies/Zombie_Ribcage.glb', size: 5.2, hp: 140, speed: 1.7, dmg: 32, reward: 250, pool: 10 },
     },
     /** 每幾波出現一隻 Boss */
     bossEvery: 3,
