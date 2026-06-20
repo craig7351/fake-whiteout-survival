@@ -12,7 +12,6 @@ import {
   Vector3,
   TransformNode,
   Mesh,
-  VertexData,
   InstancedMesh,
   DynamicTexture,
   AnimationGroup,
@@ -972,8 +971,8 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
 
   /** 樹林：佈滿 TREE_MAX 個固定佈點，依 treeVisible 顯示前 N 棵（debug 可調） */
   let treeField: TreeField | null = null;
-  const TREE_MAX = 2000;
-  let treeVisible = 500; // 預設較少（thin-instance 不逐棵剔除，棵數直接吃頂點/填充率）
+  const TREE_MAX = 30;
+  let treeVisible = 30; // 只放 30 棵真實 Pine Tree（放大棵）
   function applyTreeCount() {
     treeField?.setCount(treeVisible);
   }
@@ -990,92 +989,24 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   /** 地圖空白處種樹（非阻塞；須在 TREE_MAX/treeField/isClearForDecor 等宣告之後呼叫） */
   void scatterNature();
 
-  /** 程序繪製「雪松」貼圖（透明背景，給 billboard 樹用） */
-  function drawPineTexture(): DynamicTexture {
-    const tex = new DynamicTexture('tree-bb-tex', { width: 256, height: 256 }, scene, true);
-    const ctx = tex.getContext() as CanvasRenderingContext2D;
-    ctx.clearRect(0, 0, 256, 256);
-    const cx = 128;
-    /** 樹幹 */
-    ctx.fillStyle = '#6b4a2b';
-    ctx.fillRect(cx - 13, 198, 26, 54);
-    const tri = (baseY: number, half: number, topY: number, color: string) => {
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.moveTo(cx, topY);
-      ctx.lineTo(cx - half, baseY);
-      ctx.lineTo(cx + half, baseY);
-      ctx.closePath();
-      ctx.fill();
-    };
-    /** 三層針葉（下大上小），交錯深淺綠 */
-    tri(212, 104, 118, '#2f6b3a');
-    tri(150, 86, 58, '#377a42');
-    tri(96, 64, 12, '#2f6b3a');
-    /** 雪帽（每層頂端一抹白） */
-    ctx.fillStyle = 'rgba(255,255,255,0.92)';
-    tri(150, 40, 58, 'rgba(255,255,255,0.9)');
-    tri(96, 30, 12, 'rgba(255,255,255,0.95)');
-    tex.hasAlpha = true;
-    tex.update();
-    return tex;
-  }
-  /** 交叉雙平面 billboard 樹（單一 mesh／4 三角面、alpha 鏤空，可 thin-instance、極省效能） */
-  function makeBillboardTree(): Mesh {
-    const W = 3.4;
-    const H = 4.6;
-    const h = W / 2;
-    /** 兩片垂直交叉的 quad（一片朝 Z、一片朝 X），底部在 y=0 */
-    const positions = [
-      -h, 0, 0, h, 0, 0, h, H, 0, -h, H, 0, // 朝 ±Z
-      0, 0, -h, 0, 0, h, 0, H, h, 0, H, -h, // 朝 ±X
-    ];
-    const uvs = [0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1];
-    const indices = [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7];
-    const normals: number[] = [];
-    VertexData.ComputeNormals(positions, indices, normals);
-    const vd = new VertexData();
-    vd.positions = positions;
-    vd.indices = indices;
-    vd.uvs = uvs;
-    vd.normals = normals;
-    const tree = new Mesh('tree-bb', scene);
-    vd.applyToMesh(tree);
-    const mat = new StandardMaterial('tree-bb-mat', scene);
-    mat.diffuseTexture = drawPineTexture();
-    mat.useAlphaFromDiffuseTexture = true;
-    mat.transparencyMode = 1; // MATERIAL_ALPHATEST：鏤空，不需排序、省 overdraw
-    mat.backFaceCulling = false;
-    mat.specularColor = Color3.Black();
-    mat.emissiveColor = new Color3(0.28, 0.3, 0.28); // 微提亮避免太暗
-    tree.material = mat;
-    tree.isPickable = false;
-    return tree;
-  }
-
   async function scatterNature() {
-    const trees: Mesh[] = [makeBillboardTree()];
+    /** 真實 Pine Tree（低面數）：只放少量、放大棵；TreeField 用 InstancedMesh 逐棵剔除 */
+    const pine = await loadProp(scene, '/models/pine_tree.glb', 9);
+    const trees: Mesh[] = pine ? [pine] : [];
     const RANGE = CONFIG.arenaHalf * 3.6; // 散布半徑（落在地面範圍內）
 
-    /** 草素材已移除；樹改用 billboard 交叉平面（省效能） */
-
-    /**
-     * 樹：數量大 → thin-instance。產生 TREE_MAX 個固定佈點，交給 TreeField 一次畫完。
-     * 尺寸 80%~150% 偏態分布（skew=2.2）：多數中小、偶爾出現明顯較大的巨木。
-     */
     if (trees.length) {
       const placements: TreePlacement[] = [];
       for (let tries = 0; placements.length < TREE_MAX && tries < TREE_MAX * 10; tries++) {
         const x = (Math.random() * 2 - 1) * RANGE;
         const z = (Math.random() * 2 - 1) * RANGE;
         if (!isClearForDecor(x, z)) continue;
-        const r = Math.pow(Math.random(), 2.2); // 偏態：壓向小尺寸
         placements.push({
-          mesh: (Math.random() * trees.length) | 0,
+          mesh: 0,
           x,
           z,
           rotY: Math.random() * Math.PI * 2,
-          scale: 0.8 + r * (1.5 - 0.8),
+          scale: 0.9 + Math.random() * 0.5, // 0.9~1.4，再大一點
         });
       }
       treeField = new TreeField(trees, placements);

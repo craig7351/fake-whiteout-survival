@@ -75,7 +75,7 @@
       <div class="mb-2 text-sm font-black text-fuchsia-300">🌲 地圖裝飾 Debug</div>
       <div class="mb-3">
         <div class="flex justify-between"><span>樹木數量</span><span class="font-bold">{{ treeCount }}</span></div>
-        <input type="range" class="w-full accent-fuchsia-400" min="0" max="2000" step="1" v-model.number="treeCount" @input="onTreeCount" />
+        <input type="range" class="w-full accent-fuchsia-400" min="0" max="30" step="1" v-model.number="treeCount" @input="onTreeCount" />
       </div>
 
       <div class="mb-2 text-sm font-black text-fuchsia-300">💰 金錢 Debug</div>
@@ -275,7 +275,7 @@ function onCamAngle() {
   game?.setCameraAlpha((camAngle.value * Math.PI) / 180);
 }
 /** 地圖樹木數量（預設與 game.ts treeVisible 一致） */
-const treeCount = ref(500);
+const treeCount = ref(30);
 function onTreeCount() {
   game?.setTreeCount(treeCount.value);
 }
