@@ -32,6 +32,15 @@
       </span>
     </div>
 
+    <!-- 縮放 Debug（左上，比對正常/壞掉數值） -->
+    <div class="absolute left-3 top-[8rem] z-40 rounded-lg bg-black/75 px-2 py-1 font-mono text-[10px] leading-tight text-lime-300">
+      <div>vv.scale: <b>{{ zoomDbg.scale }}</b></div>
+      <div>vv: {{ zoomDbg.vvW }}×{{ zoomDbg.vvH }}</div>
+      <div>inner: {{ zoomDbg.inW }}×{{ zoomDbg.inH }}</div>
+      <div>client: {{ zoomDbg.clientW }} dpr: {{ zoomDbg.dpr }}</div>
+      <div>off: {{ zoomDbg.offX }},{{ zoomDbg.offY }} zoomBtn: {{ pageZoomView }}</div>
+    </div>
+
     <!-- 第二列（右側，避開左側狀態列）：畫質 + 樹木佈局下拉 -->
     <div class="absolute right-3 top-[4.5rem] z-10 flex gap-1">
       <select
@@ -266,6 +275,23 @@ const stats = reactive<GameStats>({
 
 let game: GameHandle | undefined;
 
+/** 縮放 Debug 數值（比對正常 vs 卡住放大） */
+const zoomDbg = reactive({ scale: 1, vvW: 0, vvH: 0, inW: 0, inH: 0, dpr: 1, clientW: 0, offX: 0, offY: 0 });
+const pageZoomView = ref(1);
+function updateZoomDbg() {
+  const vv = window.visualViewport;
+  zoomDbg.scale = vv ? Math.round(vv.scale * 1000) / 1000 : 1;
+  zoomDbg.vvW = vv ? Math.round(vv.width) : 0;
+  zoomDbg.vvH = vv ? Math.round(vv.height) : 0;
+  zoomDbg.inW = window.innerWidth;
+  zoomDbg.inH = window.innerHeight;
+  zoomDbg.dpr = Math.round(window.devicePixelRatio * 100) / 100;
+  zoomDbg.clientW = document.documentElement.clientWidth;
+  zoomDbg.offX = vv ? Math.round(vv.offsetLeft) : 0;
+  zoomDbg.offY = vv ? Math.round(vv.offsetTop) : 0;
+}
+let zoomDbgTimer: number | undefined;
+
 const MUTE_KEY = 'fake-whiteout:muted';
 const muted = ref(localStorage.getItem(MUTE_KEY) === '1');
 
@@ -339,10 +365,17 @@ onMounted(() => {
   /** 固定播放「歡樂」（實際播放會等首次點擊/移動解鎖音訊） */
   sound.setMusic(HAPPY_TRACK);
   hintTimer = window.setTimeout(() => (showHint.value = false), 9000);
+  updateZoomDbg();
+  zoomDbgTimer = window.setInterval(updateZoomDbg, 250);
+  window.visualViewport?.addEventListener('resize', updateZoomDbg);
+  window.visualViewport?.addEventListener('scroll', updateZoomDbg);
 });
 
 onBeforeUnmount(() => {
   if (hintTimer !== undefined) clearTimeout(hintTimer);
+  if (zoomDbgTimer !== undefined) clearInterval(zoomDbgTimer);
+  window.visualViewport?.removeEventListener('resize', updateZoomDbg);
+  window.visualViewport?.removeEventListener('scroll', updateZoomDbg);
   game?.dispose();
 });
 
@@ -370,6 +403,7 @@ let pageZoom = 1;
 function zoomBy(delta: number) {
   // 下限 1：iOS 對 <1 的 scale 會忽略，故 − 只到 1（等於把卡住的放大夾回正常）
   pageZoom = Math.max(1, Math.min(2, Math.round((pageZoom + delta) * 10) / 10));
+  pageZoomView.value = pageZoom;
   const m = document.querySelector('meta[name="viewport"]');
   if (m) {
     m.setAttribute(
