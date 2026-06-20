@@ -132,6 +132,24 @@
 
     <joystick class="absolute bottom-8 left-8 z-10" @move="onJoyMove" @end="onJoyEnd" />
 
+    <!-- 左下：手動縮放（卡在放大時可手動還原） -->
+    <div class="absolute bottom-44 left-3 z-40 flex flex-col gap-1">
+      <button
+        class="flex h-9 w-9 items-center justify-center rounded-full bg-slate-900/70 text-lg font-black text-white ring-1 ring-cyan-200/20 backdrop-blur-md active:scale-90"
+        title="放大畫面"
+        @click="zoomBy(0.1)"
+      >
+        ＋
+      </button>
+      <button
+        class="flex h-9 w-9 items-center justify-center rounded-full bg-slate-900/70 text-lg font-black text-white ring-1 ring-cyan-200/20 backdrop-blur-md active:scale-90"
+        title="縮小畫面（卡住時連點回到正常）"
+        @click="zoomBy(-0.1)"
+      >
+        －
+      </button>
+    </div>
+
     <!-- 塔防開啟說明（買房後跳出） -->
     <div v-if="stats.showDefenseIntro" class="absolute inset-0 z-50 flex items-center justify-center bg-slate-950/65 p-5 backdrop-blur-md">
       <div class="w-full max-w-sm rounded-2xl bg-slate-900/95 p-5 text-center text-slate-100 shadow-2xl ring-1 ring-cyan-300/30">
@@ -325,6 +343,18 @@ function onStartDefense() {
 }
 function onRestart() {
   location.reload();
+}
+/** 手動縮放：強制設定 viewport 的 scale（卡在放大時可連點「－」回到 1） */
+let pageZoom = 1;
+function zoomBy(delta: number) {
+  pageZoom = Math.max(0.5, Math.min(2, Math.round((pageZoom + delta) * 10) / 10));
+  const m = document.querySelector('meta[name="viewport"]');
+  if (m) {
+    m.setAttribute(
+      'content',
+      `width=device-width, initial-scale=${pageZoom}, maximum-scale=${pageZoom}, minimum-scale=${pageZoom}, user-scalable=no, viewport-fit=cover`,
+    );
+  }
 }
 const timeText = computed(() => {
   const t = Math.floor(stats.gameTime);
