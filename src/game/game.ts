@@ -320,6 +320,8 @@ interface Zombie {
   dying: number;
   attackAccum: number;
   slowT: number; // 緩速塔減速剩餘秒數（>0 表示移動減速中）
+  slowFactor: number; // 當前減速倍率（越小越慢；塔等級越高越強）
+  frost?: Mesh; // 被減速時的藍色霜凍光球
 }
 
 export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {}): GameHandle {
@@ -473,6 +475,13 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   pipMat.diffuseColor = Color3.Black();
   pipMat.specularColor = Color3.Black();
   pipMat.disableLighting = true;
+  /** 被減速殭屍的藍色霜凍光球（半透明、不受光，共用材質） */
+  const frostMat = new StandardMaterial('frost-mat', scene);
+  frostMat.emissiveColor = new Color3(0.4, 0.8, 1);
+  frostMat.diffuseColor = Color3.Black();
+  frostMat.specularColor = Color3.Black();
+  frostMat.disableLighting = true;
+  frostMat.alpha = 0.32;
   /** 依塔種取設定（箭/砲/緩速） */
   const towerCfgOf = (type: string) => (type === 'cannon' ? DEF.cannon : type === 'slow' ? DEF.slow : DEF.tower);
   /** 塔的有效射程（隨等級提升 15%/級） */
@@ -997,7 +1006,13 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
           /** 每隻殭屍都有頭頂血條（Boss 較大） */
           const bar = new HpBar(scene, isBoss ? 4 : 1.6, isBoss ? 0.5 : 0.26);
           bar.setEnabled(false);
+          /** 霜凍光球（被緩速時顯示） */
+          const frost = MeshBuilder.CreateSphere('frost', { diameter: isBoss ? 4.5 : 2.2, segments: 6 }, scene);
+          frost.material = frostMat;
+          frost.isPickable = false;
+          frost.setEnabled(false);
           zombies.push({
+            frost,
             type,
             isBoss,
             bar,
@@ -1023,6 +1038,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
             dying: 0,
             attackAccum: 0,
             slowT: 0,
+            slowFactor: 1,
           });
         }
       });
@@ -2533,6 +2549,8 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     z.z = -38 + Math.random() * 54;
     z.entered = false;
     z.slowT = 0;
+    z.slowFactor = 1;
+    z.frost?.setEnabled(false);
     /** Boss 血量隨波加成更高 */
     z.hpMax = z.baseHp + (waveNum - 1) * DEF.wave.hpPerWave * (z.isBoss ? 5 : 1);
     z.hp = z.hpMax;
@@ -2683,9 +2701,14 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       if (pad.type === 'slow') {
         const sr = towerRange(pad);
         const sr2 = sr * sr;
+        /** 等級越高減速越強：每級再 −5% 速度（下限 15%） */
+        const effFactor = Math.max(0.15, DEF.slow.slowFactor - (pad.level - 1) * 0.05);
         for (const z of zombies) {
           if (!z.active || !z.alive) continue;
-          if ((z.x - pad.x) ** 2 + (z.z - pad.z) ** 2 <= sr2) z.slowT = DEF.slow.slowSec;
+          if ((z.x - pad.x) ** 2 + (z.z - pad.z) ** 2 <= sr2) {
+            z.slowT = DEF.slow.slowSec;
+            z.slowFactor = z.slowFactor < 1 ? Math.min(z.slowFactor, effFactor) : effFactor; // 取最強的一座
+          }
         }
         pad.fireAccum += dt;
         if (pad.fireAccum >= cfg.interval) {
@@ -2719,16 +2742,25 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         pad.inst.rotation.y = cur + diff * Math.min(1, dt * 10);
       }
       pad.fireAccum += dt;
-      if (pad.fireAccum >= interval) {
-        if (best) {
-          pad.fireAccum = 0;
+      if (pad.fireAccum >= interval && best) {
+        pad.fireAccum = 0;
+        /** 高等級一次多發：Lv3 起 2 發、Lv4 起 3 發，分別射向最近的數隻 */
+        const shots = Math.max(1, pad.level - 1);
+        const targets =
+          shots === 1
+            ? [best]
+            : zombies
+                .filter((z) => z.active && z.alive && (z.x - pad.x) ** 2 + (z.z - pad.z) ** 2 <= range * range)
+                .sort((a, b) => (a.x - pad.x) ** 2 + (a.z - pad.z) ** 2 - ((b.x - pad.x) ** 2 + (b.z - pad.z) ** 2))
+                .slice(0, shots);
+        for (const tgt of targets) {
           if (pad.type === 'cannon') {
             /** 砲塔：丟出炸彈，飛到目標才爆炸（範圍傷害） */
-            fireBomb(pad.x, 3.6, pad.z, best.x, best.z, dmg);
+            fireBomb(pad.x, 3.6, pad.z, tgt.x, tgt.z, dmg);
           } else {
-            fireTowerTracer(pad.x, 3.6, pad.z, best.x, 1.6, best.z);
+            fireTowerTracer(pad.x, 3.6, pad.z, tgt.x, 1.6, tgt.z);
             burstAt(muzzleFx, pad.x, 3.6, pad.z, 4);
-            damageZombie(best, dmg);
+            damageZombie(tgt, dmg);
           }
         }
       }
@@ -2739,6 +2771,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       if (!z.active) continue;
       if (!z.alive) {
         z.bar?.setEnabled(false); // 死亡動畫時不顯示血條
+        z.frost?.setEnabled(false);
         z.dying -= dt;
         z.root.position.set(z.x, z.yOffset, z.z);
         if (z.dying <= 0) {
@@ -2756,9 +2789,17 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       const dz = tz - z.z;
       const d = Math.hypot(dx, dz) || 1;
       z.root.rotation.y = Math.atan2(dx, dz);
-      /** 緩速塔減速：slowT>0 時移動速度乘上 slowFactor */
-      if (z.slowT > 0) z.slowT -= dt;
-      const sp = z.slowT > 0 ? z.speed * DEF.slow.slowFactor : z.speed;
+      /** 緩速塔減速：slowT>0 時移動速度乘上 slowFactor，並顯示藍色霜凍光球 */
+      if (z.slowT > 0) {
+        z.slowT -= dt;
+        if (z.slowT <= 0) z.slowFactor = 1;
+      }
+      const slowed = z.slowT > 0;
+      const sp = slowed ? z.speed * z.slowFactor : z.speed;
+      if (z.frost) {
+        z.frost.setEnabled(slowed);
+        if (slowed) z.frost.position.set(z.x, z.isBoss ? 3 : 1.4, z.z);
+      }
       if (!z.entered) {
         const step = Math.min(d, sp * dt);
         z.x += (dx / d) * step;
@@ -2801,6 +2842,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
           z.active = false;
           z.root.setEnabled(false);
           z.bar?.setEnabled(false);
+          z.frost?.setEnabled(false);
         }
     }
 
@@ -3039,6 +3081,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       houseHolder.dispose();
       zombies.forEach((z) => {
         z.bar?.dispose();
+        z.frost?.dispose();
         z.root.dispose();
       });
       zombieFleets.forEach((f) => f.container.dispose());
