@@ -7,6 +7,12 @@
 
 技術棧:**Vue 3 + Vite 6 + TypeScript + Tailwind 4 + Babylon.js 9**,後端 **Cloudflare Pages Functions + D1**。
 
+## 📸 遊戲畫面
+
+| 首頁 | 牧場獵牛 | 近戰殭屍 | 塔防守城 |
+|:---:|:---:|:---:|:---:|
+| <img src="docs/screenshots/home.png" width="200" /> | <img src="docs/screenshots/pasture.jpg" width="200" /> | <img src="docs/screenshots/combat.jpg" width="200" /> | <img src="docs/screenshots/defense.jpg" width="200" /> |
+
 ---
 
 ## ✨ 特色
