@@ -574,7 +574,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     if (money < cost) return;
     money -= cost;
     pad.level++;
-    pad.inst?.scaling.setAll(1 + pad.level * 0.12);
+    pad.inst?.scaling.setAll(1 + pad.level * 0.24); // 升級放大比例加倍
     setTowerPips(selectedPad);
     /** 升級特效：金色火花爆發 + 文字 */
     burstAt(killFx, pad.x, 2.5, pad.z, 18);
