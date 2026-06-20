@@ -1,6 +1,6 @@
 <template>
   <div class="relative h-full w-full overflow-hidden bg-[#0b1020]">
-    <canvas ref="canvasRef" class="block h-full w-full outline-none touch-none" />
+    <canvas ref="canvasRef" class="block h-full w-full outline-none touch-manipulation" />
 
     <hud :stats="stats" />
 

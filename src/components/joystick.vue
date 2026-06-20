@@ -1,7 +1,7 @@
 <template>
   <div
     ref="padRef"
-    class="pad touch-none rounded-full bg-white/15 backdrop-blur-md"
+    class="pad touch-manipulation rounded-full bg-white/15 backdrop-blur-md"
     @pointerdown="onDown"
     @pointermove="onMove"
     @pointerup="onUp"
@@ -76,8 +76,8 @@ function onUp() {
   height: 42%;
   border-radius: 9999px;
   background: rgba(255, 255, 255, 0.55);
-  /** 觸控穿透到外圈 pad（pad 有 touch-none），避免雙擊正中間觸發瀏覽器縮放 */
+  /** 觸控穿透到外圈 pad（pad 用 touch-action:manipulation 停用雙擊放大） */
   pointer-events: none;
-  touch-action: none;
+  touch-action: manipulation;
 }
 </style>
