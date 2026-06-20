@@ -710,7 +710,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   goldStack.setBaseUp(0.8 * PLAYER_SCALE);
   goldStack.setLayerH(0.3 * PLAYER_SCALE); // 金條層距加大（否則疊太密、看起來長很慢）
   /** 背上最多顯示幾根金條（超過不再往上疊，邏輯仍計數） */
-  const GOLD_BARS_MAX = 60;
+  const GOLD_BARS_MAX = 200; // 背上金條最多 200 層
   /** 付款時每花掉這麼多錢，就有一根金條從背上飛進框框 */
   const PAY_PER_BAR = 25;
 
@@ -954,8 +954,8 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   const playerSpeed = () => CONFIG.player.speed;
 
   /** 攤位肉/收銀金條的堆疊池上限（拉高到視覺上等同無限制，會一直往上疊） */
-  const COUNTER_MAX = 600;
-  const CASH_MAX = 600;
+  const COUNTER_MAX = 200; // 桌上肉最多 200 層
+  const CASH_MAX = 200; // 桌上金條最多 200 層
   /** 只有數量改變時才重排堆疊（避免大量堆疊每幀重建陣列） */
   let lastCounterN = -1;
   let lastCashN = -1;
