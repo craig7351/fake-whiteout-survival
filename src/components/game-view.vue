@@ -156,11 +156,19 @@
           </div>
         </div>
         <button
-          class="w-full rounded-xl bg-cyan-500 py-3 text-lg font-black text-white shadow-lg transition hover:bg-cyan-400 active:scale-95"
+          class="mb-2 w-full rounded-xl bg-cyan-500 py-3 text-lg font-black text-white shadow-lg transition hover:bg-cyan-400 active:scale-95"
           @click="onRestart"
         >
           再玩一次
         </button>
+        <a
+          href="https://www.facebook.com/people/Book-Ai/61584339789020/"
+          target="_blank"
+          rel="noopener"
+          class="flex w-full items-center justify-center gap-2 rounded-xl bg-[#1877f2] py-3 text-base font-black text-white shadow-lg transition hover:bg-[#3b8bf5] active:scale-95"
+        >
+          <span class="text-xl">👍</span> 追蹤 Book Ai 粉絲團
+        </a>
       </div>
     </div>
   </div>
