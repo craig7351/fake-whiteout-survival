@@ -32,15 +32,27 @@
       </span>
     </div>
 
-    <!-- 第二列（右側，避開左側狀態列）：畫質下拉 -->
-    <div class="absolute right-3 top-[4.5rem] z-10">
+    <!-- 第二列（右側，避開左側狀態列）：畫質 + 樹木佈局下拉 -->
+    <div class="absolute right-3 top-[4.5rem] z-10 flex gap-1">
+      <select
+        v-model.number="treeLayout"
+        @change="onTreeLayout"
+        class="h-9 rounded-full bg-slate-900/55 px-2 text-xs font-bold text-white backdrop-blur-md outline-none"
+        title="樹木佈局"
+      >
+        <option :value="0">🌲 環形</option>
+        <option :value="1">🌲 雙層環</option>
+        <option :value="2">🌲 左右</option>
+        <option :value="3">🌲 上下</option>
+        <option :value="4">🌲 四角</option>
+      </select>
       <select
         v-model.number="quality"
         @change="onQuality"
-        class="h-9 rounded-full bg-slate-900/55 px-3 text-xs font-bold text-white backdrop-blur-md outline-none"
+        class="h-9 rounded-full bg-slate-900/55 px-2 text-xs font-bold text-white backdrop-blur-md outline-none"
         title="畫質：卡頓時選流暢"
       >
-        <option :value="1">🖥️ 高畫質</option>
+        <option :value="1">🖥️ 高</option>
         <option :value="1.5">🖥️ 標準</option>
         <option :value="2">🖥️ 流暢</option>
         <option :value="2.5">🖥️ 省電</option>
@@ -75,7 +87,7 @@
       <div class="mb-2 text-sm font-black text-fuchsia-300">🌲 地圖裝飾 Debug</div>
       <div class="mb-3">
         <div class="flex justify-between"><span>樹木數量</span><span class="font-bold">{{ treeCount }}</span></div>
-        <input type="range" class="w-full accent-fuchsia-400" min="0" max="30" step="1" v-model.number="treeCount" @input="onTreeCount" />
+        <input type="range" class="w-full accent-fuchsia-400" min="0" max="80" step="1" v-model.number="treeCount" @input="onTreeCount" />
       </div>
 
       <div class="mb-2 text-sm font-black text-fuchsia-300">💰 金錢 Debug</div>
@@ -265,6 +277,14 @@ function onQuality() {
   localStorage.setItem(QUALITY_KEY, String(quality.value));
 }
 
+/** 樹木佈局（0~4 五種固定佈局）：玩家自選並記住 */
+const TREE_KEY = 'fake-whiteout:treeLayout';
+const treeLayout = ref(Number(localStorage.getItem(TREE_KEY) ?? '0') || 0);
+function onTreeLayout() {
+  game?.setTreeLayout(treeLayout.value);
+  localStorage.setItem(TREE_KEY, String(treeLayout.value));
+}
+
 /** 背景音樂：固定播放「歡樂」這首（移除下拉選單） */
 const HAPPY_TRACK = Math.max(0, sound.musicTracks().indexOf('歡樂'));
 
@@ -293,7 +313,7 @@ function onCamAngle() {
   game?.setCameraAlpha((camAngle.value * Math.PI) / 180);
 }
 /** 地圖樹木數量（預設與 game.ts treeVisible 一致） */
-const treeCount = ref(30);
+const treeCount = ref(80);
 function onTreeCount() {
   game?.setTreeCount(treeCount.value);
 }
@@ -315,6 +335,7 @@ onMounted(() => {
   });
   game.setMuted(muted.value);
   game.setHardwareScaling(quality.value); // 套用上次選的畫質
+  game.setTreeLayout(treeLayout.value); // 套用上次選的樹木佈局
   /** 固定播放「歡樂」（實際播放會等首次點擊/移動解鎖音訊） */
   sound.setMusic(HAPPY_TRACK);
   hintTimer = window.setTimeout(() => (showHint.value = false), 9000);

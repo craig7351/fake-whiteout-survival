@@ -57,8 +57,9 @@ export class TreeField {
     }
   }
 
+  /** 只清實例（保留來源 mesh，供切換佈局重建用） */
   dispose() {
     this.items.forEach((it) => it.inst.dispose());
-    this.source.dispose();
+    this.items = [];
   }
 }

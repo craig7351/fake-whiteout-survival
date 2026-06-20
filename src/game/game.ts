@@ -104,6 +104,8 @@ export interface GameHandle {
   setMuted: (on: boolean) => void;
   /** 畫質：設定算繪解析度倍率（1=最清晰；越大越省效能/越糊） */
   setHardwareScaling: (level: number) => void;
+  /** 樹木佈局：0~4 五種固定佈局 */
+  setTreeLayout: (idx: number) => void;
   /** Debug：背後金條的層距（疊高間距） */
   setGoldLayerH: (v: number) => void;
   /** Debug：背後金條離肉的距離（往後位移） */
@@ -969,52 +971,74 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   /** ===== 非同步載入模型，完成後建立 instance 池、牛群、玩家視覺 ===== */
   void initAssets();
 
-  /** 樹林：佈滿 TREE_MAX 個固定佈點，依 treeVisible 顯示前 N 棵（debug 可調） */
+  /** 樹林：固定佈局（5 種預設，下拉選；非隨機） */
   let treeField: TreeField | null = null;
-  const TREE_MAX = 30;
-  let treeVisible = 30; // 只放 30 棵真實 Pine Tree（放大棵）
+  let treeSource: Mesh | null = null; // Pine Tree 來源（共用，切換佈局時不重載）
+  let treeLayoutIdx = 0; // 目前佈局（0~4）
+  const TREE_MAX = 80;
+  let treeVisible = 80; // 顯示全部（佈局自訂棵數）
   function applyTreeCount() {
     treeField?.setCount(treeVisible);
   }
 
-  /** 該點是否為「可種樹的空地」（避開店面、牧場、顧客動線） */
-  function isClearForDecor(x: number, z: number): boolean {
-    const a = CONFIG.arenaHalf;
-    const M = 6; // 加大緩衝，避免（放大後的）樹長進基地
-    if (Math.abs(x) < a + M && Math.abs(z) < a + M) return false; // 店面（含柵欄外緣 + 緩衝）
-    if (x > P.cx - P.halfX - M && x < P.cx + P.halfX + M && z > P.cz - P.halfZ - M && z < P.cz + P.halfZ + M) return false; // 牧場1
-    const P2 = CONFIG.pasture2;
-    if (x > P2.cx - P2.halfX - M && x < P2.cx + P2.halfX + M && z > P2.cz - P2.halfZ - M && z < P2.cz + P2.halfZ + M) return false; // 牧場2
-    if (Math.abs(x) < 6 && z > a && z < CONFIG.customer.gate.z + 4) return false; // 顧客進場動線
-    return true;
+  /** 5 種固定樹木佈局（皆位於基地外圍，回傳佈點清單） */
+  function treeLayout(idx: number): TreePlacement[] {
+    const out: TreePlacement[] = [];
+    const add = (x: number, z: number, s = 1) => out.push({ mesh: 0, x, z, rotY: (x * 13.7 + z * 7.3) % 6.283, scale: s });
+    const ring = (count: number, r: number, phase = 0) => {
+      for (let i = 0; i < count; i++) {
+        const ang = phase + (i / count) * Math.PI * 2;
+        add(Math.cos(ang) * r, Math.sin(ang) * r);
+      }
+    };
+    switch (idx) {
+      case 0: // 均勻環
+        ring(28, 52);
+        break;
+      case 1: // 雙層密環
+        ring(40, 50);
+        ring(22, 66);
+        break;
+      case 2: // 左右兩排
+        for (let z = -54; z <= 54; z += 9) {
+          add(-52, z);
+          add(52, z);
+        }
+        break;
+      case 3: // 上下兩排
+        for (let x = -54; x <= 54; x += 9) {
+          add(x, -52);
+          add(x, 52);
+        }
+        break;
+      case 4: // 四角樹叢
+        for (const [cxp, czp] of [
+          [-50, -50],
+          [50, -50],
+          [-50, 50],
+          [50, 50],
+        ]) {
+          for (let k = 0; k < 8; k++) add(cxp + ((k % 3) - 1) * 8, czp + (Math.floor(k / 3) - 1) * 8);
+        }
+        break;
+    }
+    return out;
+  }
+  /** 依目前佈局重建樹林（切換時呼叫；不重載來源 mesh） */
+  function buildTrees() {
+    if (!treeSource) return;
+    treeField?.dispose();
+    treeField = new TreeField([treeSource], treeLayout(treeLayoutIdx));
+    applyTreeCount();
   }
 
-  /** 地圖空白處種樹（非阻塞；須在 TREE_MAX/treeField/isClearForDecor 等宣告之後呼叫） */
+  /** 載入 Pine Tree 來源後依目前佈局建樹（非阻塞；須在相關宣告之後呼叫） */
   void scatterNature();
 
   async function scatterNature() {
-    /** 真實 Pine Tree（低面數）：只放少量、放大棵；TreeField 用 InstancedMesh 逐棵剔除 */
-    const pine = await loadProp(scene, '/models/pine_tree.glb', 13);
-    const trees: Mesh[] = pine ? [pine] : [];
-    const RANGE = CONFIG.arenaHalf * 4.5; // 散布半徑加大，樹站到基地外圍
-
-    if (trees.length) {
-      const placements: TreePlacement[] = [];
-      for (let tries = 0; placements.length < TREE_MAX && tries < TREE_MAX * 10; tries++) {
-        const x = (Math.random() * 2 - 1) * RANGE;
-        const z = (Math.random() * 2 - 1) * RANGE;
-        if (!isClearForDecor(x, z)) continue;
-        placements.push({
-          mesh: 0,
-          x,
-          z,
-          rotY: Math.random() * Math.PI * 2,
-          scale: 1.0 + Math.random() * 0.5, // 1.0~1.5，再大一點
-        });
-      }
-      treeField = new TreeField(trees, placements);
-      applyTreeCount();
-    }
+    /** 真實 Pine Tree（低面數），放大棵再 ×2（size 26）；以固定佈局擺放 */
+    treeSource = await loadProp(scene, '/models/pine_tree.glb', 26);
+    if (treeSource) buildTrees();
   }
 
   async function initAssets() {
@@ -3111,6 +3135,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       backStack.mesh.dispose();
       goldStack.mesh.dispose();
       treeField?.dispose();
+      treeSource?.dispose();
       dynamiteStation.dispose();
       pasture2Holder.dispose();
       bloodDecals.dispose();
@@ -3174,6 +3199,10 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     },
     setHardwareScaling(level: number) {
       engine.setHardwareScalingLevel(Math.max(0.5, Math.min(3, level)));
+    },
+    setTreeLayout(idx: number) {
+      treeLayoutIdx = Math.max(0, Math.min(4, Math.round(idx)));
+      buildTrees();
     },
     setGoldLayerH(v: number) {
       goldStack.setLayerH(v);
