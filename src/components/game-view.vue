@@ -7,21 +7,21 @@
     <!-- 左上：靜音 + Debug（小圖示，讓出右上給金錢） -->
     <div class="absolute left-3 top-3 z-10 flex items-center gap-2" :style="safeTop">
       <button
-        class="flex h-11 w-11 items-center justify-center rounded-full bg-black/40 text-xl text-white backdrop-blur-md transition hover:bg-black/60 active:scale-95"
+        class="flex h-11 w-11 items-center justify-center rounded-full bg-slate-900/55 text-xl text-white backdrop-blur-md transition hover:bg-slate-800/70 active:scale-95"
         @click="onToggleMute"
       >
         {{ muted ? '🔇' : '🔊' }}
       </button>
       <button
         class="flex h-11 w-11 items-center justify-center rounded-full text-xl text-white backdrop-blur-md transition active:scale-95"
-        :class="showDebug ? 'bg-fuchsia-500' : 'bg-black/40 hover:bg-black/60'"
+        :class="showDebug ? 'bg-fuchsia-500' : 'bg-slate-900/55 hover:bg-slate-800/70'"
         @click="showDebug = !showDebug"
       >
         🛠️
       </button>
       <!-- FPS（放在此排，永遠在 debug 面板之上、不被遮住） -->
       <span
-        class="flex h-11 items-center rounded-full bg-black/40 px-3 text-sm font-black backdrop-blur-md"
+        class="flex h-11 items-center rounded-full bg-slate-900/55 px-3 text-sm font-black backdrop-blur-md"
         :class="stats.fps >= 50 ? 'text-lime-300' : stats.fps >= 30 ? 'text-amber-300' : 'text-rose-300'"
       >
         ⚡ {{ stats.fps }}
@@ -30,7 +30,7 @@
       <select
         v-model.number="music"
         @change="onMusic"
-        class="h-11 rounded-full bg-black/40 px-3 text-sm font-bold text-white backdrop-blur-md outline-none"
+        class="h-11 rounded-full bg-slate-900/55 px-3 text-sm font-bold text-white backdrop-blur-md outline-none"
       >
         <option :value="0">🎵 關閉</option>
         <option v-for="(name, i) in musicTracks" :key="i" :value="i + 1">🎵 {{ name }}</option>
@@ -40,7 +40,7 @@
     <!-- Debug 面板：背後金條參數 -->
     <div
       v-if="showDebug"
-      class="absolute left-3 top-16 z-40 w-64 rounded-2xl bg-black/80 p-3 text-xs text-white shadow-2xl ring-1 ring-white/10 backdrop-blur-md"
+      class="absolute left-3 top-16 z-40 w-64 rounded-2xl bg-slate-950/85 p-3 text-xs text-white shadow-2xl ring-1 ring-cyan-200/15 backdrop-blur-md"
     >
       <div class="mb-2 text-sm font-black text-fuchsia-300">🪙 背後金條 Debug</div>
       <div class="mb-3">
@@ -87,7 +87,7 @@
     <!-- 操作提示 -->
     <div
       v-if="showHint"
-      class="pointer-events-none absolute left-1/2 top-16 z-10 -translate-x-1/2 rounded-xl bg-black/55 px-4 py-2 text-center text-xs text-white/90 backdrop-blur-md sm:text-sm"
+      class="pointer-events-none absolute left-1/2 top-16 z-10 -translate-x-1/2 rounded-xl bg-slate-950/60 px-4 py-2 text-center text-xs text-cyan-50/90 ring-1 ring-cyan-200/15 backdrop-blur-md sm:text-sm"
     >
       基地內踩 🪓🗡️🔫 換武器 → 進 🐄牧場 打牛 → 撿肉走回 🥩販售 擺攤 → 顧客買單後到 💲收銀 收錢 → 踩升級墊變強
     </div>
@@ -95,7 +95,7 @@
     <!-- 點塔升級選單 -->
     <div
       v-if="stats.selectedTower"
-      class="absolute bottom-28 left-1/2 z-30 w-64 -translate-x-1/2 rounded-2xl bg-black/80 p-3 text-center text-white shadow-2xl ring-1 ring-white/15 backdrop-blur-md"
+      class="absolute bottom-28 left-1/2 z-30 w-64 -translate-x-1/2 rounded-2xl bg-slate-950/85 p-3 text-center text-white shadow-2xl ring-1 ring-cyan-200/20 backdrop-blur-md"
     >
       <button
         class="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-white/15 text-sm hover:bg-white/30"
@@ -105,13 +105,13 @@
       </button>
       <div class="text-lg font-black">
         {{ stats.selectedTower.type === 'cannon' ? '💣 砲塔' : '🏹 機槍塔' }}
-        <span class="ml-1 text-sky-300">Lv.{{ stats.selectedTower.level }}/{{ stats.selectedTower.maxLevel }}</span>
+        <span class="ml-1 text-cyan-300">Lv.{{ stats.selectedTower.level }}/{{ stats.selectedTower.maxLevel }}</span>
       </div>
       <div class="mt-1 text-xs text-white/70">傷害 / 射速 隨等級提升</div>
       <button
         v-if="!stats.selectedTower.maxed"
         class="mt-2.5 w-full rounded-xl px-4 py-2.5 text-base font-black transition active:scale-95"
-        :class="stats.selectedTower.affordable ? 'bg-emerald-500 text-white hover:bg-emerald-400' : 'bg-white/15 text-white/50'"
+        :class="stats.selectedTower.affordable ? 'bg-cyan-500 text-white hover:bg-cyan-400' : 'bg-white/15 text-white/50'"
         @click="onTowerUpgrade"
       >
         ⬆️ 升級　💰 {{ stats.selectedTower.cost.toLocaleString() }}
