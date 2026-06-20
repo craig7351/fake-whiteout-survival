@@ -67,11 +67,6 @@ export interface GameStats {
   fps: number;
   gameTime: number; // 遊戲進行秒數
   money: number;
-  /** 玩家生命 / 上限（被牛攻擊會扣，停手會回復） */
-  hp: number;
-  maxHp: number;
-  /** 受擊紅光暈強度（0~1，HUD 畫面邊緣泛紅） */
-  damageFlash: number;
   carried: number;
   carryCap: number;
   counterMeat: number;
@@ -768,14 +763,8 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     recoilT = 0;
   }
 
-  /** 玩家生命與受擊計時 */
-  let hp = CONFIG.player.maxHp;
-  let hurtTimer = 0;
-  let damageFlash = 0;
-  /** 地面血漬池 + 玩家頭頂血條 */
+  /** 地面血漬池（牛死亡血痕；玩家血量設計已取消） */
   const bloodDecals = new BloodDecals(scene);
-  const playerBar = new HpBar(scene, 1.8, 0.26);
-  playerBar.setEnabled(false);
 
   /** ===== 打擊特效：命中火花 / 擊殺血花（一次建立、反覆爆發，效能友善） ===== */
   const sparkTex = new DynamicTexture('spark', { width: 64, height: 64 }, scene, false);
@@ -1443,7 +1432,6 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     const cowCfg = CONFIG.cow;
     const aggro2 = cowCfg.aggroRadius * cowCfg.aggroRadius;
     const contact2 = cowCfg.contactRadius * cowCfg.contactRadius;
-    let hurtThisFrame = false;
     for (const c of cows) {
       if (!c.active) continue; // 牧場2 未解鎖前的牛不參與更新
       if (c.pulse > 0) c.pulse = Math.max(0, c.pulse - dt * 4);
@@ -1508,13 +1496,8 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
             c.z += (pdz / d) * cowCfg.chaseSpeed * dt;
             moved = true;
           } else {
-            /** 接觸：播放頂角攻擊動作、造成低額傷害並擊退玩家 */
+            /** 接觸：只播放頂角攻擊動作（玩家不再扣血/被擊退） */
             c.lunge = 1;
-            hp -= cowCfg.contactDps * dt;
-            hurtThisFrame = true;
-            player.position.x += (pdx / d) * cowCfg.knockback * dt;
-            player.position.z += (pdz / d) * cowCfg.knockback * dt;
-            clampPlayer(player.position);
           }
           c.tx = c.x;
           c.tz = c.z;
@@ -1546,29 +1529,6 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       c.x = Math.max(pg.cx - pg.halfX + 0.8, Math.min(pg.cx + pg.halfX - 0.8, c.x));
       c.z = Math.max(pg.cz - pg.halfZ + 0.8, Math.min(pg.cz + pg.halfZ - 0.8, c.z));
       applyCow(c);
-    }
-
-    /** --- 玩家生命：受擊計時、回復、紅光暈、頭頂血條 --- */
-    if (hurtThisFrame) {
-      hurtTimer = CONFIG.player.regenDelay;
-      damageFlash = 0.65; // 觸發畫面邊緣泛紅
-    } else if (hurtTimer > 0) {
-      hurtTimer -= dt;
-    }
-    if (damageFlash > 0) damageFlash = Math.max(0, damageFlash - dt * 1.8);
-    if (hurtTimer <= 0 && hp < CONFIG.player.maxHp) hp = Math.min(CONFIG.player.maxHp, hp + CONFIG.player.regen * dt);
-    if (hp <= 0) {
-      /** 被牛撞昏：退回店面後門、回滿血（不損失肉，維持放置友善） */
-      hp = CONFIG.player.maxHp;
-      hurtTimer = 0;
-      player.position.set(0, 0, -CONFIG.arenaHalf + 2);
-    }
-    /** 玩家頭頂血條：未滿血才顯示 */
-    const showPlayerBar = hp < CONFIG.player.maxHp - 0.5;
-    playerBar.setEnabled(showPlayerBar);
-    if (showPlayerBar) {
-      playerBar.setRatio(hp / CONFIG.player.maxHp);
-      playerBar.setPosition(player.position.x, CONFIG.player.height * PLAYER_SCALE + 0.6, player.position.z);
     }
 
     /** --- 戰鬥：依裝備武器攻擊（近戰範圍斬／衝鋒槍遠程） --- */
@@ -2113,9 +2073,6 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         fps: Math.round(engine.getFps()),
         gameTime: elapsed,
         money: Math.floor(money),
-        hp: Math.max(0, Math.round(hp)),
-        maxHp: CONFIG.player.maxHp,
-        damageFlash,
         carried,
         carryCap: carryCap(),
         counterMeat,
@@ -3183,7 +3140,6 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       dynamiteStation.dispose();
       pasture2Holder.dispose();
       bloodDecals.dispose();
-      playerBar.dispose();
       goldFly.dispose();
       meatFly.dispose();
       cows.forEach((c) => {

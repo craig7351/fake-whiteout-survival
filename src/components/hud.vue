@@ -56,16 +56,6 @@
   <!-- 防線告急：攻入達 8/10 起，畫面邊緣脈動泛紅警告 -->
   <div v-if="stats.defenseActive && breachRatio >= 0.8" class="breach-warn pointer-events-none absolute inset-0 z-30" />
 
-  <!-- 受擊紅光暈（被牛攻擊時畫面邊緣泛紅） -->
-  <div
-    class="pointer-events-none absolute inset-0 z-30"
-    :style="{
-      opacity: stats.damageFlash,
-      background: 'radial-gradient(ellipse at center, transparent 42%, rgba(225,25,25,0.9) 100%)',
-      transition: 'opacity 70ms linear',
-    }"
-  />
-
   <!-- 升級提示（站上升級地墊時，加大字級給手機看） -->
   <div
     v-if="stats.nearUpgrade"

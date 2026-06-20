@@ -30,11 +30,14 @@
       <span class="flex h-11 items-center rounded-full bg-slate-900/55 px-3 text-sm font-black text-cyan-100 backdrop-blur-md tabular-nums">
         ⏱️ {{ timeText }}
       </span>
-      <!-- 畫質（解析度）下拉 -->
+    </div>
+
+    <!-- 第二列（右側，避開左側狀態列）：畫質下拉 -->
+    <div class="absolute right-3 top-[4.5rem] z-10">
       <select
         v-model.number="quality"
         @change="onQuality"
-        class="h-11 rounded-full bg-slate-900/55 px-3 text-sm font-bold text-white backdrop-blur-md outline-none"
+        class="h-9 rounded-full bg-slate-900/55 px-3 text-xs font-bold text-white backdrop-blur-md outline-none"
         title="畫質：卡頓時選流暢"
       >
         <option :value="1">🖥️ 高畫質</option>
@@ -210,9 +213,6 @@ const stats = reactive<GameStats>({
   fps: 0,
   gameTime: 0,
   money: 0,
-  hp: 100,
-  maxHp: 100,
-  damageFlash: 0,
   carried: 0,
   carryCap: 0,
   counterMeat: 0,
