@@ -992,35 +992,55 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       }
     };
     switch (idx) {
-      case 0: // 均勻環
-        ring(28, 52);
+      case 0: // 大圈稀疏
+        ring(18, 60);
         break;
-      case 1: // 雙層密環
-        ring(40, 50);
-        ring(22, 66);
+      case 1: {
+        // 北側森林牆（三道弧，背面較密）
+        const arc = (count: number, r: number) => {
+          for (let i = 0; i < count; i++) {
+            const ang = Math.PI * 0.55 + (i / (count - 1)) * Math.PI * 0.9;
+            add(Math.cos(ang) * r, Math.sin(ang) * r);
+          }
+        };
+        arc(10, 50);
+        arc(12, 60);
+        arc(14, 70);
         break;
-      case 2: // 左右兩排
-        for (let z = -54; z <= 54; z += 9) {
-          add(-52, z);
-          add(52, z);
-        }
-        break;
-      case 3: // 上下兩排
-        for (let x = -54; x <= 54; x += 9) {
-          add(x, -52);
-          add(x, 52);
-        }
-        break;
-      case 4: // 四角樹叢
-        for (const [cxp, czp] of [
-          [-50, -50],
-          [50, -50],
-          [-50, 50],
-          [50, 50],
+      }
+      case 2: // 群島樹叢（數個散落小叢）
+        for (const [cx, cz] of [
+          [-62, -10],
+          [62, -10],
+          [0, -62],
+          [-45, 42],
+          [45, 42],
+          [-60, 32],
         ]) {
-          for (let k = 0; k < 8; k++) add(cxp + ((k % 3) - 1) * 8, czp + (Math.floor(k / 3) - 1) * 8);
+          for (let k = 0; k < 5; k++) add(cx + ((k % 3) - 1) * 7, cz + Math.floor(k / 3) * 7);
         }
         break;
+      case 3: // 方形外框
+        for (let x = -60; x <= 60; x += 15) {
+          add(x, -60);
+          add(x, 60);
+        }
+        for (let z = -45; z <= 45; z += 15) {
+          add(-60, z);
+          add(60, z);
+        }
+        break;
+      case 4: {
+        // 螺旋散布（黃金角，固定種子；看起來自然但每次一樣）
+        const N = 30;
+        const GA = Math.PI * (3 - Math.sqrt(5));
+        for (let i = 0; i < N; i++) {
+          const r = 48 + (i / N) * 26;
+          const ang = i * GA;
+          add(Math.cos(ang) * r, Math.sin(ang) * r);
+        }
+        break;
+      }
     }
     /** 過濾掉落在「院子(塔防區)/基地/牧場」內的樹（含緩衝），避免樹跑進塔區 */
     const M = 5;

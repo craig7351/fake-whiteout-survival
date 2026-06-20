@@ -40,11 +40,11 @@
         class="h-9 rounded-full bg-slate-900/55 px-2 text-xs font-bold text-white backdrop-blur-md outline-none"
         title="樹木佈局"
       >
-        <option :value="0">🌲 環形</option>
-        <option :value="1">🌲 雙層環</option>
-        <option :value="2">🌲 左右</option>
-        <option :value="3">🌲 上下</option>
-        <option :value="4">🌲 四角</option>
+        <option :value="0">🌲 大圈</option>
+        <option :value="1">🌲 森林牆</option>
+        <option :value="2">🌲 群島</option>
+        <option :value="3">🌲 外框</option>
+        <option :value="4">🌲 螺旋散布</option>
       </select>
       <select
         v-model.number="quality"
