@@ -989,35 +989,15 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   }
 
   async function scatterNature() {
-    const [gB, gC, gD, tA, tB, tC] = await Promise.all([
-      loadProp(scene, '/models/nature/Grass_2_B_Color1.glb', 0.9),
-      loadProp(scene, '/models/nature/Grass_2_C_Color1.glb', 0.9),
-      loadProp(scene, '/models/nature/Grass_2_D_Color1.glb', 0.9),
+    const [tA, tB, tC] = await Promise.all([
       loadProp(scene, '/models/nature/Tree_4_A_Color1.glb', 3.6),
       loadProp(scene, '/models/nature/Tree_4_B_Color1.glb', 3.6),
       loadProp(scene, '/models/nature/Tree_4_C_Color1.glb', 3.6),
     ]);
-    const grass = [gB, gC, gD].filter((m): m is Mesh => !!m);
     const trees = [tA, tB, tC].filter((m): m is Mesh => !!m);
-    grass.forEach((m) => (m.isVisible = false));
     const RANGE = CONFIG.arenaHalf * 3.6; // 散布半徑（落在地面範圍內）
 
-    /** 草：數量少，用 InstancedMesh 即可（均勻隨機大小） */
-    const placeGrass = (sources: Mesh[], count: number, minS: number, maxS: number) => {
-      if (!sources.length) return;
-      for (let tries = 0, placed = 0; placed < count && tries < count * 10; tries++) {
-        const x = (Math.random() * 2 - 1) * RANGE;
-        const z = (Math.random() * 2 - 1) * RANGE;
-        if (!isClearForDecor(x, z)) continue;
-        const inst = sources[(Math.random() * sources.length) | 0].createInstance('grass');
-        inst.isPickable = false;
-        inst.position.set(x, 0, z);
-        inst.rotation.y = Math.random() * Math.PI * 2;
-        inst.scaling.setAll(minS + Math.random() * (maxS - minS));
-        placed++;
-      }
-    };
-    placeGrass(grass, 240, 0.7, 1.5);
+    /** 草素材已移除 */
 
     /**
      * 樹：數量大 → thin-instance。產生 TREE_MAX 個固定佈點，交給 TreeField 一次畫完。
