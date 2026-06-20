@@ -153,8 +153,8 @@
 
     <joystick class="absolute bottom-8 left-8 z-10" @move="onJoyMove" @end="onJoyEnd" />
 
-    <!-- 左下：手動縮放（卡在放大時可手動還原） -->
-    <div class="absolute bottom-44 left-3 z-40 flex flex-col gap-1">
+    <!-- 左側（移到搖桿上方，避免被搖桿吃掉觸控）：手動縮放 -->
+    <div class="absolute bottom-[16rem] left-3 z-40 flex flex-col gap-2">
       <button
         class="flex h-9 w-9 items-center justify-center rounded-full bg-slate-900/70 text-lg font-black text-white ring-1 ring-cyan-200/20 backdrop-blur-md active:scale-90"
         title="放大畫面"
