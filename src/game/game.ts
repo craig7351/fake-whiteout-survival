@@ -58,6 +58,7 @@ export interface NearUpgradeView {
 
 export interface GameStats {
   fps: number;
+  gameTime: number; // 遊戲進行秒數
   money: number;
   /** 玩家生命 / 上限（被牛攻擊會扣，停手會回復） */
   hp: number;
@@ -2124,6 +2125,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       statAccum = 0;
       options.onStats?.({
         fps: Math.round(engine.getFps()),
+        gameTime: elapsed,
         money: Math.floor(money),
         hp: Math.max(0, Math.round(hp)),
         maxHp: CONFIG.player.maxHp,

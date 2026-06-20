@@ -26,6 +26,10 @@
       >
         ⚡ {{ stats.fps }}
       </span>
+      <!-- 遊戲時間 -->
+      <span class="flex h-11 items-center rounded-full bg-slate-900/55 px-3 text-sm font-black text-cyan-100 backdrop-blur-md tabular-nums">
+        ⏱️ {{ timeText }}
+      </span>
     </div>
 
     <!-- Debug 面板：背後金條參數 -->
@@ -175,7 +179,7 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { createGame, type GameHandle, type GameStats } from '../game/game';
 import { sound } from '../game/sound';
 import Hud from './hud.vue';
@@ -184,6 +188,7 @@ import Joystick from './joystick.vue';
 const canvasRef = ref<HTMLCanvasElement>();
 const stats = reactive<GameStats>({
   fps: 0,
+  gameTime: 0,
   money: 0,
   hp: 100,
   maxHp: 100,
@@ -291,6 +296,12 @@ function onStartDefense() {
 function onRestart() {
   location.reload();
 }
+const timeText = computed(() => {
+  const t = Math.floor(stats.gameTime);
+  const m = Math.floor(t / 60);
+  const s = t % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+});
 function onToggleMute() {
   muted.value = !muted.value;
   localStorage.setItem(MUTE_KEY, muted.value ? '1' : '0');

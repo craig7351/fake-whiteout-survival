@@ -69,6 +69,16 @@
         </button>
       </div>
 
+      <!-- 粉絲團 -->
+      <a
+        href="https://www.facebook.com/people/Book-Ai/61584339789020/"
+        target="_blank"
+        rel="noopener"
+        class="mb-5 flex w-full items-center justify-center gap-2 rounded-xl bg-[#1877f2] py-2.5 text-sm font-black text-white shadow-lg transition hover:bg-[#3b8bf5] active:scale-95"
+      >
+        <span class="text-lg">👍</span> 追蹤 Book Ai 粉絲團
+      </a>
+
       <!-- 全服累計統計 -->
       <div class="grid w-full grid-cols-2 gap-2.5">
         <div class="glass stat-card">
