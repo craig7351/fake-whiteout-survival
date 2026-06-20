@@ -11,8 +11,8 @@ import {
 } from '@babylonjs/core';
 import '@babylonjs/loaders';
 
-/** 背後肉堆緩衝上限（極大值，視為不限高；超過才會封頂） */
-const MAX_VISIBLE = 3000;
+/** 背後肉堆視覺上限（超過此數封頂；thin-instance 固定此數，與實際攜帶量無關） */
+const MAX_VISIBLE = 500;
 /** 一層放一塊（單列往上疊，高度不限制） */
 const COLS = 1;
 const ROWS = 1;

@@ -35,3 +35,22 @@ document.addEventListener(
 );
 /** 同時擋掉手勢縮放（雙指）外的 gesturestart（iOS 專有） */
 document.addEventListener('gesturestart', (e) => e.preventDefault());
+
+/**
+ * 偵測頁面是否被放大（visualViewport.scale > 1），若是就自動夾回 1。
+ * 處理「雙擊偶爾仍放大且回不去」：把 viewport 的 maximum-scale 先設 <1 再設回 1，
+ * 強迫 Safari 重新把目前縮放夾回 1。
+ */
+const viewportMeta = document.querySelector('meta[name="viewport"]');
+const VIEWPORT_BASE = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
+function resetPageZoom() {
+  if (!viewportMeta) return;
+  viewportMeta.setAttribute('content', VIEWPORT_BASE.replace('maximum-scale=1.0', 'maximum-scale=0.99'));
+  viewportMeta.setAttribute('content', VIEWPORT_BASE);
+}
+const vv = window.visualViewport;
+if (vv) {
+  vv.addEventListener('resize', () => {
+    if (vv.scale > 1.01) resetPageZoom();
+  });
+}
