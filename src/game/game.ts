@@ -867,6 +867,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   const earn = (v: number) => {
     pendMoney += v;
     sessionMoney += v;
+    if (sessionMoney >= 2000) achieve('rich'); // 累積賺到 $2000
   };
 
   /** 成就：本場已解鎖（避免重複寫 localStorage），首次解鎖時冒提示 */
