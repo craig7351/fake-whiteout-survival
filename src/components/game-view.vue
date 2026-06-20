@@ -279,7 +279,7 @@ function onQuality() {
 
 /** 樹木佈局（0~4 五種固定佈局）：玩家自選並記住 */
 const TREE_KEY = 'fake-whiteout:treeLayout';
-const treeLayout = ref(Number(localStorage.getItem(TREE_KEY) ?? '0') || 0);
+const treeLayout = ref(Number(localStorage.getItem(TREE_KEY) ?? '4'));
 function onTreeLayout() {
   game?.setTreeLayout(treeLayout.value);
   localStorage.setItem(TREE_KEY, String(treeLayout.value));
@@ -368,7 +368,8 @@ function onRestart() {
 /** 手動縮放：強制設定 viewport 的 scale（卡在放大時可連點「－」回到 1） */
 let pageZoom = 1;
 function zoomBy(delta: number) {
-  pageZoom = Math.max(0.5, Math.min(2, Math.round((pageZoom + delta) * 10) / 10));
+  // 下限 1：iOS 對 <1 的 scale 會忽略，故 − 只到 1（等於把卡住的放大夾回正常）
+  pageZoom = Math.max(1, Math.min(2, Math.round((pageZoom + delta) * 10) / 10));
   const m = document.querySelector('meta[name="viewport"]');
   if (m) {
     m.setAttribute(

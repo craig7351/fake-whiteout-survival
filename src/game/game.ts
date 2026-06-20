@@ -974,7 +974,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   /** 樹林：固定佈局（5 種預設，下拉選；非隨機） */
   let treeField: TreeField | null = null;
   let treeSource: Mesh | null = null; // Pine Tree 來源（共用，切換佈局時不重載）
-  let treeLayoutIdx = 0; // 目前佈局（0~4）
+  let treeLayoutIdx = 4; // 目前佈局（0~4），預設四角
   const TREE_MAX = 80;
   let treeVisible = 80; // 顯示全部（佈局自訂棵數）
   function applyTreeCount() {
