@@ -46,7 +46,7 @@
       <div class="mb-2 text-sm font-black text-fuchsia-300">🎥 鏡頭 Debug</div>
       <div class="mb-3">
         <div class="flex justify-between"><span>遠近（縮放）</span><span class="font-bold">{{ camRadius.toFixed(0) }}</span></div>
-        <input type="range" class="w-full accent-fuchsia-400" min="14" max="70" step="0.5" v-model.number="camRadius" @input="onCamRadius" />
+        <input type="range" class="w-full accent-fuchsia-400" min="8" max="75" step="0.5" v-model.number="camRadius" @input="onCamRadius" />
       </div>
       <div class="mb-3">
         <div class="flex justify-between"><span>旋轉角度（度）</span><span class="font-bold">{{ camAngle.toFixed(0) }}°</span></div>

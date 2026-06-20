@@ -196,8 +196,8 @@ export const CONFIG = {
     alpha: -Math.PI / 2,
     beta: Math.PI / 3.4,
     radius: 19,
-    lowerRadius: 13,
-    upperRadius: 30,
+    lowerRadius: 8,
+    upperRadius: 75,
     /** 平滑跟隨玩家的速度 */
     follow: 4,
   },
