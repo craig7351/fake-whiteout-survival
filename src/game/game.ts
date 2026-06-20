@@ -988,16 +988,64 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     return true;
   }
 
+  /** 程序繪製「雪松」貼圖（透明背景，給 billboard 樹用） */
+  function drawPineTexture(): DynamicTexture {
+    const tex = new DynamicTexture('tree-bb-tex', { width: 256, height: 256 }, scene, true);
+    const ctx = tex.getContext() as CanvasRenderingContext2D;
+    ctx.clearRect(0, 0, 256, 256);
+    const cx = 128;
+    /** 樹幹 */
+    ctx.fillStyle = '#6b4a2b';
+    ctx.fillRect(cx - 13, 198, 26, 54);
+    const tri = (baseY: number, half: number, topY: number, color: string) => {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(cx, topY);
+      ctx.lineTo(cx - half, baseY);
+      ctx.lineTo(cx + half, baseY);
+      ctx.closePath();
+      ctx.fill();
+    };
+    /** 三層針葉（下大上小），交錯深淺綠 */
+    tri(212, 104, 118, '#2f6b3a');
+    tri(150, 86, 58, '#377a42');
+    tri(96, 64, 12, '#2f6b3a');
+    /** 雪帽（每層頂端一抹白） */
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    tri(150, 40, 58, 'rgba(255,255,255,0.9)');
+    tri(96, 30, 12, 'rgba(255,255,255,0.95)');
+    tex.hasAlpha = true;
+    tex.update();
+    return tex;
+  }
+  /** 交叉雙平面 billboard 樹（每棵 4 三角面、alpha 鏤空，極省效能） */
+  function makeBillboardTree(): Mesh {
+    const W = 3.4;
+    const H = 4.6;
+    const mat = new StandardMaterial('tree-bb-mat', scene);
+    mat.diffuseTexture = drawPineTexture();
+    mat.useAlphaFromDiffuseTexture = true;
+    mat.transparencyMode = 1; // MATERIAL_ALPHATEST：鏤空，不需排序、省 overdraw
+    mat.backFaceCulling = false;
+    mat.specularColor = Color3.Black();
+    mat.emissiveColor = new Color3(0.28, 0.3, 0.28); // 微提亮避免太暗
+    const p1 = MeshBuilder.CreatePlane('tb1', { width: W, height: H }, scene);
+    p1.position.y = H / 2;
+    const p2 = MeshBuilder.CreatePlane('tb2', { width: W, height: H }, scene);
+    p2.position.y = H / 2;
+    p2.rotation.y = Math.PI / 2;
+    const merged = Mesh.MergeMeshes([p1, p2], true, true);
+    const tree = merged ?? p1;
+    tree.material = mat;
+    tree.isPickable = false;
+    return tree;
+  }
+
   async function scatterNature() {
-    const [tA, tB, tC] = await Promise.all([
-      loadProp(scene, '/models/nature/Tree_4_A_Color1.glb', 3.6),
-      loadProp(scene, '/models/nature/Tree_4_B_Color1.glb', 3.6),
-      loadProp(scene, '/models/nature/Tree_4_C_Color1.glb', 3.6),
-    ]);
-    const trees = [tA, tB, tC].filter((m): m is Mesh => !!m);
+    const trees: Mesh[] = [makeBillboardTree()];
     const RANGE = CONFIG.arenaHalf * 3.6; // 散布半徑（落在地面範圍內）
 
-    /** 草素材已移除 */
+    /** 草素材已移除；樹改用 billboard 交叉平面（省效能） */
 
     /**
      * 樹：數量大 → thin-instance。產生 TREE_MAX 個固定佈點，交給 TreeField 一次畫完。
