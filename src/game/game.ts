@@ -974,7 +974,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   /** 樹林（thin-instance）：佈滿 TREE_MAX 個固定佈點，依 treeVisible 顯示前 N 棵（debug 可調） */
   let treeField: TreeField | null = null;
   const TREE_MAX = 2000;
-  let treeVisible = 2000;
+  let treeVisible = 500; // 預設較少（thin-instance 不逐棵剔除，棵數直接吃頂點/填充率）
   function applyTreeCount() {
     treeField?.setCount(treeVisible);
   }

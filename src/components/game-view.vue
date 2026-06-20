@@ -275,7 +275,7 @@ function onCamAngle() {
   game?.setCameraAlpha((camAngle.value * Math.PI) / 180);
 }
 /** 地圖樹木數量（預設與 game.ts treeVisible 一致） */
-const treeCount = ref(2000);
+const treeCount = ref(500);
 function onTreeCount() {
   game?.setTreeCount(treeCount.value);
 }
