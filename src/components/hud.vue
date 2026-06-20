@@ -35,7 +35,7 @@
   <!-- 房子防禦戰：上方波次提示 + 房子血條 -->
   <div
     v-if="stats.defenseActive"
-    class="absolute left-1/2 top-20 z-20 flex -translate-x-1/2 flex-col items-center gap-1"
+    class="absolute left-1/2 top-32 z-20 flex -translate-x-1/2 flex-col items-center gap-1"
   >
     <div class="rounded-xl bg-slate-950/65 px-4 py-1.5 text-center text-sm font-black text-cyan-50 backdrop-blur-md ring-1 ring-cyan-200/20 sm:text-base">
       {{ stats.waveLabel }}
