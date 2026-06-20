@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>偽寒冰啟示錄 Fake Whiteout Survival｜放置經營 × 塔防 網頁遊戲</title>
+    <meta name="description" content="雪地主題的放置經營×塔防網頁遊戲：經營肉舖、擴張牧場、自動化生產、蓋塔守城，撐過 30 波殭屍即破關。Vue 3 + Babylon.js，免下載直接玩。" />
+    <meta property="og:title" content="偽寒冰啟示錄 Fake Whiteout Survival" />
+    <meta property="og:description" content="放置經營 × 塔防 網頁遊戲，撐過 30 波殭屍即破關。" />
+    <meta property="og:image" content="screenshots/home.png" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>❄️</text></svg>" />
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      :root {
+        --cyan: #38bdf8;
+        --cyan-l: #7dd3fc;
+        --gold: #ffd24a;
+        --red: #fb7185;
+      }
+      body {
+        font-family: -apple-system, "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+        color: #e6eef7;
+        background: #06182c;
+        line-height: 1.6;
+        overflow-x: hidden;
+      }
+      .bg {
+        position: fixed; inset: 0; z-index: -1;
+        background:
+          radial-gradient(60% 45% at 18% 8%, rgba(56, 189, 248, 0.25), transparent 70%),
+          radial-gradient(55% 40% at 85% 90%, rgba(129, 140, 248, 0.2), transparent 70%),
+          linear-gradient(180deg, #06182c 0%, #0c2c45 45%, #14455f 100%);
+      }
+      .wrap { max-width: 980px; margin: 0 auto; padding: 0 20px; }
+      a { color: inherit; }
+
+      /* Hero */
+      header { text-align: center; padding: 64px 20px 36px; }
+      .fake { color: var(--red); font-size: 0.6em; vertical-align: 0.18em; margin-right: 0.08em; }
+      h1 {
+        font-size: clamp(2.4rem, 8vw, 4rem); font-weight: 900; letter-spacing: 0.06em;
+        background: linear-gradient(180deg, #fff 0%, var(--cyan-l) 60%, var(--cyan) 100%);
+        -webkit-background-clip: text; background-clip: text; color: transparent;
+        text-shadow: 0 6px 30px rgba(56, 189, 248, 0.35);
+      }
+      .en { letter-spacing: 0.35em; color: rgba(125, 211, 252, 0.7); font-size: 0.8rem; font-weight: 700; margin-top: 6px; }
+      .tag { color: #cfe0f0; margin: 16px auto 0; max-width: 560px; font-size: 1rem; }
+      .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 26px; }
+      .btn {
+        display: inline-flex; align-items: center; gap: 8px; padding: 14px 28px; border-radius: 14px;
+        font-weight: 900; font-size: 1.05rem; text-decoration: none; transition: transform 0.15s, filter 0.15s;
+        border: 1px solid rgba(186, 230, 253, 0.5);
+      }
+      .btn:hover { transform: translateY(-2px); filter: brightness(1.08); }
+      .btn-play { background: linear-gradient(135deg, #67e8f9, #38bdf8 55%, #3b82f6); color: #042231; box-shadow: 0 10px 30px rgba(56, 189, 248, 0.45); }
+      .btn-ghost { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.18); }
+      .btn-fb { background: #1877f2; border-color: rgba(255,255,255,0.2); color: #fff; }
+
+      section { padding: 40px 0; }
+      h2 { text-align: center; font-size: clamp(1.5rem, 5vw, 2rem); font-weight: 900; margin-bottom: 8px; }
+      h2 .accent { color: var(--cyan-l); }
+      .sub { text-align: center; color: #9fb6cc; margin-bottom: 28px; }
+
+      .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+      .card {
+        background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 16px; padding: 18px; backdrop-filter: blur(8px);
+      }
+      .card .ico { font-size: 1.9rem; }
+      .card h3 { font-size: 1.05rem; margin: 6px 0 4px; }
+      .card p { color: #aebfd0; font-size: 0.92rem; }
+
+      .steps { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+      .step {
+        background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 999px; padding: 10px 18px; font-weight: 700; font-size: 0.95rem;
+      }
+      .step b { color: var(--cyan-l); }
+
+      .shots { display: flex; gap: 14px; overflow-x: auto; padding: 6px 2px 14px; scroll-snap-type: x mandatory; }
+      .shots img {
+        height: 460px; border-radius: 18px; border: 1px solid rgba(255, 255, 255, 0.14);
+        box-shadow: 0 14px 40px rgba(0, 0, 0, 0.4); scroll-snap-align: center; flex: 0 0 auto;
+      }
+      .shotcap { text-align: center; color: #9fb6cc; font-size: 0.85rem; margin-top: 4px; }
+
+      .video { position: relative; width: 100%; max-width: 340px; margin: 0 auto; aspect-ratio: 9 / 16; }
+      .video iframe { width: 100%; height: 100%; border: 0; border-radius: 18px; box-shadow: 0 14px 40px rgba(0, 0, 0, 0.4); }
+
+      footer { text-align: center; padding: 48px 20px 60px; color: #9fb6cc; }
+      footer .cta { margin-bottom: 18px; }
+      .tech { font-size: 0.85rem; margin-top: 14px; }
+      .divider { height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent); margin: 8px 0; }
+    </style>
+  </head>
+  <body>
+    <div class="bg"></div>
+
+    <header>
+      <div class="wrap">
+        <h1><span class="fake">偽</span>寒冰啟示錄</h1>
+        <div class="en">FAKE WHITEOUT SURVIVAL</div>
+        <p class="tag">雪地主題的 <b>放置經營 × 塔防</b> 網頁小遊戲：獵牛取肉 → 擺攤賺錢 → 自動化生產 → 蓋塔守城，別讓殭屍攻入基地，撐過 <b>30 波</b> 即破關！</p>
+        <div class="cta">
+          <a class="btn btn-play" href="https://fake-whiteout-survival.pages.dev" target="_blank" rel="noopener">▶ 立即遊玩</a>
+          <a class="btn btn-ghost" href="https://youtube.com/shorts/TsVlYFNEnK8" target="_blank" rel="noopener">🎬 遊玩影片</a>
+          <a class="btn btn-ghost" href="https://github.com/craig7351/fake-whiteout-survival" target="_blank" rel="noopener">⭐ GitHub</a>
+        </div>
+      </div>
+    </header>
+
+    <section class="wrap">
+      <h2>遊戲<span class="accent">特色</span></h2>
+      <p class="sub">免下載、開網頁就能玩；手機虛擬搖桿、全球共享排行榜</p>
+      <div class="grid">
+        <div class="card"><div class="ico">🐄</div><h3>放置經營循環</h3><p>獵牛取肉 → 擺攤陳列 → 顧客購買 → 收銀進帳，賺錢升級擴張。</p></div>
+        <div class="card"><div class="ico">💣</div><h3>炸開牧場 2</h3><p>買炸藥炸開旁邊樹林，解鎖血量／肉量加倍的強化牧場。</p></div>
+        <div class="card"><div class="ico">🤖</div><h3>自動化員工</h3><p>雇用獵人自動打牛、收銀員自動收錢、牧羊犬自動撿肉。</p></div>
+        <div class="card"><div class="ico">🗡️</div><h3>三種武器</h3><p>大砍刀橫掃、迴旋斧旋轉 AoE、衝鋒槍遠距掃射。</p></div>
+        <div class="card"><div class="ico">🛡️</div><h3>塔防守城</h3><p>蓋箭塔／砲塔／緩速塔攔截殭屍，每 3 波出 Boss。</p></div>
+        <div class="card"><div class="ico">🏆</div><h3>全球社群</h3><p>排行榜、留言板（可回覆）、線上人數、全服累計統計。</p></div>
+        <div class="card"><div class="ico">🏅</div><h3>成就系統</h3><p>11 項成就，首頁檢視解鎖進度。</p></div>
+        <div class="card"><div class="ico">⚡</div><h3>效能優化</h3><p>自選畫質、節流特效、逐棵剔除樹木，手機也順。</p></div>
+      </div>
+    </section>
+
+    <section class="wrap">
+      <h2>玩法<span class="accent">循環</span></h2>
+      <div class="steps">
+        <div class="step"><b>1</b> 獵牛取肉</div>
+        <div class="step"><b>2</b> 撿肉背回</div>
+        <div class="step"><b>3</b> 擺攤陳列</div>
+        <div class="step"><b>4</b> 顧客購買</div>
+        <div class="step"><b>5</b> 收銀進帳</div>
+        <div class="step"><b>6</b> 升級擴張</div>
+        <div class="step"><b>7</b> 蓋塔守城・撐過 30 波</div>
+      </div>
+    </section>
+
+    <section class="wrap">
+      <h2>防禦<span class="accent">塔</span></h2>
+      <div class="grid">
+        <div class="card"><div class="ico">🏹</div><h3>機槍塔</h3><p>單體快速射擊；高等級一次多發。</p></div>
+        <div class="card"><div class="ico">💣</div><h3>砲塔</h3><p>丟出炸彈，範圍爆擊濺射傷害。</p></div>
+        <div class="card"><div class="ico">❄️</div><h3>緩速塔</h3><p>發射藍色炸彈，落點範圍讓殭屍減速。</p></div>
+      </div>
+    </section>
+
+    <section class="wrap">
+      <h2>遊戲<span class="accent">畫面</span></h2>
+      <p class="sub">← 左右滑動 →</p>
+      <div class="shots">
+        <img src="screenshots/home.png" alt="首頁" />
+        <img src="screenshots/pasture.jpg" alt="牧場獵牛" />
+        <img src="screenshots/combat.jpg" alt="近戰殭屍" />
+        <img src="screenshots/defense.jpg" alt="塔防守城" />
+      </div>
+    </section>
+
+    <section class="wrap">
+      <h2>遊玩<span class="accent">影片</span></h2>
+      <div class="video">
+        <iframe src="https://www.youtube.com/embed/TsVlYFNEnK8" title="遊玩影片" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+      </div>
+    </section>
+
+    <footer>
+      <div class="wrap">
+        <h2>現在就<span class="accent">開玩</span></h2>
+        <div class="cta">
+          <a class="btn btn-play" href="https://fake-whiteout-survival.pages.dev" target="_blank" rel="noopener">▶ 立即遊玩</a>
+          <a class="btn btn-fb" href="https://www.facebook.com/people/Book-Ai/61584339789020/" target="_blank" rel="noopener">👍 Book Ai 粉絲團</a>
+          <a class="btn btn-ghost" href="https://github.com/craig7351/fake-whiteout-survival" target="_blank" rel="noopener">⭐ GitHub</a>
+        </div>
+        <div class="divider"></div>
+        <p class="tech">Built with Vue 3 + Vite + TypeScript + Tailwind + Babylon.js　·　後端 Cloudflare Pages Functions + D1</p>
+      </div>
+    </footer>
+  </body>
+</html>
