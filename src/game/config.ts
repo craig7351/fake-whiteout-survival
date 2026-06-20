@@ -105,12 +105,12 @@ export const CONFIG = {
     yard: { minX: 13, maxX: 44, minZ: -28, maxZ: 11 },
     /** 殭屍入口：東牆缺口（z 範圍中心/半寬） */
     zombieGap: { center: -8.5, half: 4 },
-    /** 塔位：東側(靠殭屍入口)箭/砲塔各一；房屋左右兩側(沿 z 軸)各一座緩速塔 */
+    /** 塔位：東側(靠殭屍入口)箭/砲塔各一；出口線(西側 x≈18)左右夾住殭屍動線(對齊基地中心 z=-2)各一座緩速塔 */
     towerPads: [
       { x: 40.5, z: -24.5, type: 'cannon' as const },
       { x: 40.5, z: 7.5, type: 'arrow' as const },
-      { x: 25.65, z: -17.75, type: 'slow' as const },
-      { x: 25.65, z: -1.75, type: 'slow' as const },
+      { x: 18, z: -11, type: 'slow' as const },
+      { x: 18, z: 7, type: 'slow' as const },
     ],
   },
 
