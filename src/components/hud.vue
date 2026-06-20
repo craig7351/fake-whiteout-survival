@@ -1,28 +1,17 @@
 <template>
   <!-- 右上：金錢大膠囊（手機主視覺，參考熱門遊戲） -->
   <div
-    class="absolute right-3 top-3 z-10 flex items-center gap-2 rounded-full bg-slate-900/60 px-4 py-2 shadow-lg shadow-cyan-500/10 ring-2 ring-cyan-300/30 backdrop-blur-md"
+    class="absolute right-3 top-3 z-10 flex items-center gap-1.5 rounded-full bg-slate-900/60 px-3 py-1.5 shadow-lg shadow-cyan-500/10 ring-2 ring-cyan-300/30 backdrop-blur-md sm:gap-2 sm:px-4 sm:py-2"
     :style="safeTop"
   >
-    <span class="text-2xl sm:text-3xl">💰</span>
-    <span class="min-w-[2ch] text-center text-3xl font-black tabular-nums text-amber-100 sm:text-4xl">
+    <span class="text-lg sm:text-3xl">💰</span>
+    <span class="min-w-[2ch] text-center text-xl font-black tabular-nums text-amber-100 sm:text-4xl">
       {{ stats.money.toLocaleString() }}
     </span>
   </div>
 
-  <!-- 左上：血條 + 狀態 chips（在控制鈕下方） -->
+  <!-- 左上：狀態 chips（血量改顯示在玩家頭頂） -->
   <div class="absolute left-3 top-[4.5rem] z-10 flex flex-col items-start gap-2">
-    <!-- 生命條 -->
-    <div class="flex items-center gap-2">
-      <span class="text-xl">❤️</span>
-      <div class="h-4 w-40 overflow-hidden rounded-full bg-slate-900/55 ring-1 ring-cyan-200/15 sm:w-48">
-        <div
-          class="h-full rounded-full transition-[width] duration-150"
-          :class="hpRatio > 0.5 ? 'bg-emerald-400' : hpRatio > 0.25 ? 'bg-amber-400' : 'bg-rose-500'"
-          :style="{ width: `${hpRatio * 100}%` }"
-        />
-      </div>
-    </div>
     <!-- 狀態 chips -->
     <div class="flex flex-wrap gap-2 text-sm sm:text-base">
       <span class="rounded-xl bg-slate-900/55 px-3 py-1.5 font-black text-rose-200 backdrop-blur-md ring-1 ring-cyan-200/15">
@@ -99,7 +88,6 @@ import { computed } from 'vue';
 import type { GameStats } from '../game/game';
 
 const props = defineProps<{ stats: GameStats }>();
-const hpRatio = computed(() => (props.stats.maxHp > 0 ? Math.max(0, Math.min(1, props.stats.hp / props.stats.maxHp)) : 0));
 const houseRatio = computed(() => (props.stats.houseMaxHp > 0 ? Math.max(0, Math.min(1, props.stats.houseHp / props.stats.houseMaxHp)) : 0));
 /** 避開瀏海/動態島 */
 const safeTop = { top: 'max(0.75rem, env(safe-area-inset-top))' };
