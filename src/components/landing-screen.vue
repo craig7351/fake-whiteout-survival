@@ -76,7 +76,15 @@
         </button>
       </div>
 
-      <!-- 粉絲團 -->
+      <!-- 介紹頁 + 粉絲團 -->
+      <a
+        href="https://craig7351.github.io/fake-whiteout-survival/"
+        target="_blank"
+        rel="noopener"
+        class="glass mb-2 flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-black text-cyan-100 transition hover:bg-white/10 active:scale-95"
+      >
+        <span class="text-lg">📰</span> 遊戲介紹頁
+      </a>
       <a
         href="https://www.facebook.com/people/Book-Ai/61584339789020/"
         target="_blank"
