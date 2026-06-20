@@ -53,6 +53,9 @@
     </div>
   </div>
 
+  <!-- 防線告急：攻入達 8/10 起，畫面邊緣脈動泛紅警告 -->
+  <div v-if="stats.defenseActive && breachRatio >= 0.8" class="breach-warn pointer-events-none absolute inset-0 z-30" />
+
   <!-- 受擊紅光暈（被牛攻擊時畫面邊緣泛紅） -->
   <div
     class="pointer-events-none absolute inset-0 z-30"
@@ -93,3 +96,19 @@ const breachRatio = computed(() => (props.stats.breachMax > 0 ? Math.max(0, Math
 /** 避開瀏海/動態島 */
 const safeTop = { top: 'max(0.75rem, env(safe-area-inset-top))' };
 </script>
+
+<style scoped>
+.breach-warn {
+  background: radial-gradient(ellipse at center, transparent 45%, rgba(225, 25, 25, 0.85) 100%);
+  animation: breachpulse 0.85s ease-in-out infinite;
+}
+@keyframes breachpulse {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+</style>

@@ -430,19 +430,20 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   const towerSigns: DynamicTexture[] = [];
   const towerSignPlanes: Mesh[] = [];
   buildTowerPads(houseHolder);
-  /** 基地圍欄警戒線：殭屍越過此紅色光牆＝攻入基地（掛在 houseHolder，開塔防時顯示） */
+  /** 基地圍欄警戒線：殭屍越過此紅色光牆＝攻入基地（掛在 houseHolder，開塔防時顯示，會脈動閃爍） */
+  const breachLineMat = new StandardMaterial('breach-line-mat', scene);
+  breachLineMat.emissiveColor = new Color3(1, 0.18, 0.18);
+  breachLineMat.diffuseColor = Color3.Black();
+  breachLineMat.specularColor = Color3.Black();
+  breachLineMat.disableLighting = true;
+  breachLineMat.alpha = 0.34;
+  let breachPulseT = 0;
   {
     const y = CONFIG.house.yard;
     const wall = MeshBuilder.CreateBox('breach-line', { width: 0.5, height: 2.4, depth: y.maxZ - y.minZ }, scene);
     wall.position.set(y.minX, 1.2, (y.minZ + y.maxZ) / 2);
     wall.isPickable = false;
-    const wm = new StandardMaterial('breach-line-mat', scene);
-    wm.emissiveColor = new Color3(1, 0.18, 0.18);
-    wm.diffuseColor = Color3.Black();
-    wm.specularColor = Color3.Black();
-    wm.disableLighting = true;
-    wm.alpha = 0.34;
-    wall.material = wm;
+    wall.material = breachLineMat;
     wall.parent = houseHolder;
   }
 
@@ -2774,6 +2775,10 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   function updateDefense(dt: number) {
     if (waveState === 'idle') return;
     updateBombs(dt);
+    /** 警戒線脈動：越接近失守(攻入多)脈動越快越亮 */
+    breachPulseT += dt;
+    const urgency = breaches / BREACH_MAX;
+    breachLineMat.alpha = 0.22 + (0.16 + urgency * 0.3) * (0.5 + 0.5 * Math.sin(breachPulseT * (4 + urgency * 8)));
 
     /** 塔射擊細線衰減 */
     for (const t of towerTracers) {
