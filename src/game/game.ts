@@ -37,7 +37,7 @@ const TABLE_LEG_H = 0.85;
 const TABLE_TOP_THICK = 0.18;
 const COUNTER_TOP_Y = TABLE_LEG_H + TABLE_TOP_THICK; // 攤位桌面
 const MEAT_SIZE = 0.95; // 肉模型正規化最長邊（攤位/顧客手上，比照原專案大小）
-const CUSTOMER_MEAT = 5; // 每位顧客一次最多買/拿幾片肉
+const CUSTOMER_MEAT = 10; // 每位顧客一次最多買/拿幾片肉（加倍）
 const BRICK_SIZE = 1.5; // 房子院子紅磚塊邊長
 const TURRET_AIM_OFFSET = 0; // 砲管朝向修正（若瞄準方向偏 90°/180°，改 ±Math.PI/2 或 Math.PI）
 const BAR_SIZE = 1.05; // 金條正規化最長邊（收銀台金條，比照原專案大小）
@@ -374,7 +374,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   sun.intensity = 0.7;
   sun.diffuse = new Color3(1, 0.97, 0.9);
 
-  createTerrain(scene);
+  createTerrain(scene).freezeWorldMatrix(); // 靜態地面
 
   /** ===== 木材材質 ===== */
   const wood = new StandardMaterial('wood', scene);
@@ -855,6 +855,16 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   }
   /** 漂浮數字（+$／傷害） */
   const floatText = new FloatingText(scene);
+  /** 效能：自適應解析度 + 傷害數字節流 */
+  let hwScale = 1;
+  let fpsAdjT = 0;
+  let dmgNumThisFrame = 0;
+  const DMG_NUM_CAP = 4; // 每幀最多冒幾個傷害數字（迴旋斧一次打全部時不會噴一堆）
+  const dmgNumber = (text: string, x: number, z: number) => {
+    if (dmgNumThisFrame >= DMG_NUM_CAP) return;
+    dmgNumThisFrame++;
+    floatText.spawn(text, x, 2.6, z, '#ffffff', 0.8);
+  };
   /** ===== 社群統計累計（每幾秒把增量寫進 localStorage 總計 + 更新排行榜） ===== */
   let pendMoney = 0; // 待寫入的「賺錢」增量
   let pendCows = 0; // 待寫入的殺牛增量
@@ -1369,6 +1379,16 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   scene.onBeforeRenderObservable.add(() => {
     const dt = Math.min(0.05, engine.getDeltaTime() / 1000);
     elapsed += dt;
+    dmgNumThisFrame = 0; // 每幀重設傷害數字配額
+
+    /** 自適應解析度：FPS 低就降算繪解析度、高就調回，手機屍潮回升最有感 */
+    fpsAdjT += dt;
+    if (fpsAdjT >= 1) {
+      fpsAdjT = 0;
+      const f = engine.getFps();
+      if (f < 28 && hwScale < 2) engine.setHardwareScalingLevel((hwScale = Math.min(2, hwScale + 0.25)));
+      else if (f > 52 && hwScale > 1) engine.setHardwareScalingLevel((hwScale = Math.max(1, hwScale - 0.25)));
+    }
 
     /** --- 移動輸入 --- */
     let ix = joyX;
@@ -1619,7 +1639,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
             anyKill = true;
           } else {
             burstAt(hitFx, c.x, 1.2, c.z, 14); // 命中火花
-            floatText.spawn(`${dmg}`, c.x, 2.6, c.z, '#ffffff', 0.8); // 傷害數字
+            dmgNumber(`${dmg}`, c.x, c.z); // 傷害數字（節流）
             anyHit = true;
           }
         }
@@ -2239,6 +2259,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         inst.isPickable = false;
         inst.position.set(x, r * BRICK_SIZE, z);
         inst.parent = parent;
+        inst.freezeWorldMatrix(); // 靜態牆，凍結省每幀矩陣計算
       }
     };
     const westGap = (z: number) => z >= -10 && z <= -4; // 西牆：對齊店面東門走道（玩家進出）
@@ -2699,8 +2720,8 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   function damageZombie(z: Zombie, dmg: number) {
     if (!z.active || !z.alive) return;
     z.hp -= dmg;
-    burstAt(hitFx, z.x, 1.4, z.z, 10);
-    floatText.spawn(`${Math.round(dmg)}`, z.x, 2.6, z.z, '#ffffff', 0.75);
+    if (dmgNumThisFrame < DMG_NUM_CAP) burstAt(hitFx, z.x, 1.4, z.z, 10); // 火花也跟著節流
+    dmgNumber(`${Math.round(dmg)}`, z.x, z.z);
     if (z.hp <= 0) {
       z.alive = false;
       z.dying = DEF.zombie.deathSec;
@@ -2974,11 +2995,14 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       z.z += (dz / d) * step;
       setZombieAnim(z, 'walk');
       z.root.position.set(z.x, z.yOffset, z.z);
-      /** 頭頂血條（每隻都有，Boss 較高大） */
+      /** 頭頂血條：只在受傷時顯示（滿血不畫，省 overdraw / draw call）；Boss 一律顯示 */
       if (z.bar) {
-        z.bar.setEnabled(true);
-        z.bar.setRatio(Math.max(0, z.hp) / z.hpMax);
-        z.bar.setPosition(z.x, z.isBoss ? 6.2 : 3.0, z.z);
+        const showBar = z.isBoss || z.hp < z.hpMax - 0.01;
+        z.bar.setEnabled(showBar);
+        if (showBar) {
+          z.bar.setRatio(Math.max(0, z.hp) / z.hpMax);
+          z.bar.setPosition(z.x, z.isBoss ? 6.2 : 3.0, z.z);
+        }
       }
     }
 
@@ -3356,6 +3380,7 @@ function fenceSeg(
     inst.position.set(x, 0, z);
     inst.rotation.y = horizontal ? 0 : Math.PI / 2; // Center 預設沿 X；垂直牆轉 90°
     if (parent) inst.parent = parent;
+    inst.freezeWorldMatrix(); // 靜態柵欄
     return;
   }
   const postH = 1.4;
