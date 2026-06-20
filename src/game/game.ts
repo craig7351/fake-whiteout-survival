@@ -422,7 +422,6 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
 
   /** ===== 房子（牧場2 對面，買下後炸地長出 + 紅磚圍牆院子） ===== */
   const houseStation = new BuyStation(scene, CONFIG.house.x, CONFIG.house.z, CONFIG.house.cost, '🛡️', '已開啟塔防');
-  let housePaid = 0;
   let houseBought = false;
   /** 紅磚圍牆＋塔位掛在此節點上，買下房子後一次顯示 */
   const houseHolder = new TransformNode('house-yard', scene);
@@ -1939,19 +1938,10 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     /** --- 房子框：付滿在東側炸地長出一棟房子 --- */
     if (!houseBought) {
       const Hs = CONFIG.house;
-      if (near(Hs.x, Hs.z, 2.0) && money > 0) {
-        const pay = Math.min(Hs.cost - housePaid, money, (Hs.cost / WEAPON_BUY_TIME) * dt);
-        if (pay > 0) {
-          housePaid += pay;
-          money -= pay;
-          payFlyAccum += pay;
-          while (payFlyAccum >= PAY_PER_BAR) {
-            payFlyAccum -= PAY_PER_BAR;
-            spawnPayFly(Hs.x, Hs.z);
-          }
-        }
-        houseStation.setProgress(Hs.cost > 0 ? housePaid / Hs.cost : 1);
-        if (housePaid >= Hs.cost - 0.001) {
+      if (near(Hs.x, Hs.z, 2.0)) {
+        /** 不扣錢：身上累積到門檻（$10000）即可開啟塔防；進度條顯示存錢進度 */
+        houseStation.setProgress(money / Hs.cost);
+        if (money >= Hs.cost) {
           houseBought = true;
           houseStation.setDone();
           revealHouse();
@@ -3212,6 +3202,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     },
     startDefense() {
       if (!defenseIntroPending) return;
+      if (money < CONFIG.house.cost) return; // 需身上有 $10000 才能開啟（不扣錢）
       defenseIntroPending = false;
       breaches = 0;
       waveState = 'prep';
