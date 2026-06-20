@@ -35,18 +35,6 @@
     <!-- 第二列（右側，避開左側狀態列）：畫質 + 樹木佈局下拉 -->
     <div class="absolute right-3 top-[4.5rem] z-10 flex gap-1">
       <select
-        v-model.number="treeLayout"
-        @change="onTreeLayout"
-        class="h-9 rounded-full bg-slate-900/55 px-2 text-xs font-bold text-white backdrop-blur-md outline-none"
-        title="樹木佈局"
-      >
-        <option :value="0">🌲 大圈</option>
-        <option :value="1">🌲 森林牆</option>
-        <option :value="2">🌲 群島</option>
-        <option :value="3">🌲 外框</option>
-        <option :value="4">🌲 螺旋散布</option>
-      </select>
-      <select
         v-model.number="quality"
         @change="onQuality"
         class="h-9 rounded-full bg-slate-900/55 px-2 text-xs font-bold text-white backdrop-blur-md outline-none"
@@ -260,13 +248,6 @@ function onQuality() {
   localStorage.setItem(QUALITY_KEY, String(quality.value));
 }
 
-/** 樹木佈局（0~4 五種固定佈局）：玩家自選並記住 */
-const TREE_KEY = 'fake-whiteout:treeLayout';
-const treeLayout = ref(Number(localStorage.getItem(TREE_KEY) ?? '4'));
-function onTreeLayout() {
-  game?.setTreeLayout(treeLayout.value);
-  localStorage.setItem(TREE_KEY, String(treeLayout.value));
-}
 
 /** 背景音樂：固定播放「歡樂」這首（移除下拉選單） */
 const HAPPY_TRACK = Math.max(0, sound.musicTracks().indexOf('歡樂'));
@@ -318,7 +299,6 @@ onMounted(() => {
   });
   game.setMuted(muted.value);
   game.setHardwareScaling(quality.value); // 套用上次選的畫質
-  game.setTreeLayout(treeLayout.value); // 套用上次選的樹木佈局
   /** 固定播放「歡樂」（實際播放會等首次點擊/移動解鎖音訊） */
   sound.setMusic(HAPPY_TRACK);
   hintTimer = window.setTimeout(() => (showHint.value = false), 9000);
