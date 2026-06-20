@@ -142,9 +142,19 @@
         <div class="mb-1 text-2xl font-black" :class="stats.won ? 'text-amber-300' : 'text-rose-300'">
           {{ stats.won ? '通關!' : '基地失守!' }}
         </div>
-        <p class="mb-5 text-sm text-slate-300">
+        <p class="mb-3 text-sm text-slate-300">
           {{ stats.won ? '你撐過了 30 波,成功守住基地!' : '10 隻殭屍攻入了基地圍欄…' }}
         </p>
+        <div class="mb-5 flex justify-center gap-3">
+          <div class="rounded-xl bg-white/5 px-4 py-2 ring-1 ring-white/10">
+            <div class="text-2xl font-black text-cyan-300">{{ stats.wave }}</div>
+            <div class="text-[11px] text-slate-400">撐到第幾波</div>
+          </div>
+          <div class="rounded-xl bg-white/5 px-4 py-2 ring-1 ring-white/10">
+            <div class="text-2xl font-black text-rose-300">{{ stats.breaches }}/{{ stats.breachMax }}</div>
+            <div class="text-[11px] text-slate-400">攻入基地</div>
+          </div>
+        </div>
         <button
           class="w-full rounded-xl bg-cyan-500 py-3 text-lg font-black text-white shadow-lg transition hover:bg-cyan-400 active:scale-95"
           @click="onRestart"
@@ -182,6 +192,7 @@ const stats = reactive<GameStats>({
   defenseActive: false,
   breaches: 0,
   breachMax: 10,
+  wave: 0,
   gameOver: false,
   won: false,
   waveLabel: '',

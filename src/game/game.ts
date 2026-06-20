@@ -80,6 +80,7 @@ export interface GameStats {
   defenseActive: boolean;
   breaches: number;
   breachMax: number;
+  wave: number; // 目前波數
   waveLabel: string;
   gameOver: boolean; // 失守（攻入達上限）
   won: boolean; // 通關
@@ -429,6 +430,21 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   const towerSigns: DynamicTexture[] = [];
   const towerSignPlanes: Mesh[] = [];
   buildTowerPads(houseHolder);
+  /** 基地圍欄警戒線：殭屍越過此紅色光牆＝攻入基地（掛在 houseHolder，開塔防時顯示） */
+  {
+    const y = CONFIG.house.yard;
+    const wall = MeshBuilder.CreateBox('breach-line', { width: 0.5, height: 2.4, depth: y.maxZ - y.minZ }, scene);
+    wall.position.set(y.minX, 1.2, (y.minZ + y.maxZ) / 2);
+    wall.isPickable = false;
+    const wm = new StandardMaterial('breach-line-mat', scene);
+    wm.emissiveColor = new Color3(1, 0.18, 0.18);
+    wm.diffuseColor = Color3.Black();
+    wm.specularColor = Color3.Black();
+    wm.disableLighting = true;
+    wm.alpha = 0.34;
+    wall.material = wm;
+    wall.parent = houseHolder;
+  }
 
   /** ===== 房子防禦戰狀態 ===== */
   const DEF = CONFIG.defense;
@@ -2123,6 +2139,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         defenseActive: waveState !== 'idle',
         breaches,
         breachMax: BREACH_MAX,
+        wave: waveNum,
         gameOver: waveState === 'lost',
         won: waveState === 'won',
         waveLabel:
