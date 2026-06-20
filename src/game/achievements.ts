@@ -14,7 +14,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'hunter', emoji: '🏹', name: '獵人上工', desc: '雇用獵人' },
   { id: 'cashier', emoji: '🧑‍💼', name: '收銀無憂', desc: '雇用收銀員' },
   { id: 'pasture2', emoji: '🧨', name: '開疆闢土', desc: '炸開牧場 2' },
-  { id: 'house', emoji: '🏠', name: '安居樂業', desc: '蓋好房子' },
+  { id: 'house', emoji: '🛡️', name: '備戰開始', desc: '開啟塔防戰' },
   { id: 'boss', emoji: '👹', name: '屠魔者', desc: '擊殺第一隻 Boss' },
   { id: 'wave10', emoji: '🛡️', name: '守城新手', desc: '撐過第 10 波' },
   { id: 'wave20', emoji: '⚔️', name: '守城好手', desc: '撐過第 20 波' },
