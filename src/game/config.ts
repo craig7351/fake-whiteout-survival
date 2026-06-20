@@ -109,8 +109,8 @@ export const CONFIG = {
     towerPads: [
       { x: 40.5, z: -24.5, type: 'cannon' as const },
       { x: 40.5, z: 7.5, type: 'arrow' as const },
-      { x: 18, z: -11, type: 'slow' as const },
-      { x: 18, z: 7, type: 'slow' as const },
+      { x: 30, z: -11, type: 'slow' as const },
+      { x: 30, z: 7, type: 'slow' as const },
     ],
   },
 
