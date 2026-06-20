@@ -98,7 +98,8 @@
         {{ stats.selectedTower.type === 'cannon' ? '💣 砲塔' : stats.selectedTower.type === 'slow' ? '❄️ 緩速塔' : '🏹 機槍塔' }}
         <span class="ml-1 text-cyan-300">Lv.{{ stats.selectedTower.level }}/{{ stats.selectedTower.maxLevel }}</span>
       </div>
-      <div class="mt-1 text-xs text-white/70">{{ stats.selectedTower.type === 'slow' ? '減速範圍隨等級提升' : '傷害 / 射速 隨等級提升' }}</div>
+      <div class="mt-1 text-sm font-black text-cyan-200">目前 {{ stats.selectedTower.detail }}</div>
+      <div class="text-[11px] text-white/60">{{ stats.selectedTower.type === 'slow' ? '減速強度 / 範圍 隨等級提升' : '傷害 / 射速 / 發數 隨等級提升' }}</div>
       <button
         v-if="!stats.selectedTower.maxed"
         class="mt-2.5 w-full rounded-xl px-4 py-2.5 text-base font-black transition active:scale-95"

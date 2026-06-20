@@ -17,6 +17,7 @@ import {
   AnimationGroup,
   AssetContainer,
   ParticleSystem,
+  HighlightLayer,
 } from '@babylonjs/core';
 import { createTerrain } from './terrain';
 import { loadCharacter, loadProp, loadAnimatedFleet, type AnimatedModel, type AnimatedFleet } from './model-loader';
@@ -81,7 +82,7 @@ export interface GameStats {
   houseMaxHp: number;
   waveLabel: string;
   /** 目前點選的塔（升級選單用），未選則 null */
-  selectedTower: { type: string; level: number; maxLevel: number; cost: number; maxed: boolean; affordable: boolean } | null;
+  selectedTower: { type: string; level: number; maxLevel: number; cost: number; maxed: boolean; affordable: boolean; detail: string } | null;
 }
 
 export interface GameOptions {
@@ -321,7 +322,8 @@ interface Zombie {
   attackAccum: number;
   slowT: number; // 緩速塔減速剩餘秒數（>0 表示移動減速中）
   slowFactor: number; // 當前減速倍率（越小越慢；塔等級越高越強）
-  frost?: Mesh; // 被減速時的藍色霜凍光球
+  meshes: Mesh[]; // 身體網格（被減速時加入發光層）
+  glowing: boolean; // 是否正在發藍光
 }
 
 export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {}): GameHandle {
@@ -425,6 +427,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   houseHolder.setEnabled(false);
   /** 每個塔位的浮空牌貼圖（可重畫更新等級/費用） */
   const towerSigns: DynamicTexture[] = [];
+  const towerSignPlanes: Mesh[] = [];
   buildTowerPads(houseHolder);
 
   /** ===== 房子防禦戰狀態 ===== */
@@ -446,6 +449,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   let slowSrc: Mesh | null = null;
   /** 砲塔炸彈投射物（飛到目標才爆炸） */
   let bombSrc: Mesh | null = null;
+  let slowBombSrc: Mesh | null = null;
   interface Bomb {
     inst: InstancedMesh;
     active: boolean;
@@ -456,6 +460,9 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     tz: number;
     t: number;
     dmg: number;
+    slow: boolean; // true＝藍色緩速炸彈（不造成傷害，落點範圍減速）
+    slowFactor: number; // 緩速倍率（隨塔等級更強）
+    splash: number; // 爆炸/減速作用半徑
   }
   const bombs: Bomb[] = [];
   const towerPads = CONFIG.house.towerPads.map((p) => ({
@@ -475,13 +482,11 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   pipMat.diffuseColor = Color3.Black();
   pipMat.specularColor = Color3.Black();
   pipMat.disableLighting = true;
-  /** 被減速殭屍的藍色霜凍光球（半透明、不受光，共用材質） */
-  const frostMat = new StandardMaterial('frost-mat', scene);
-  frostMat.emissiveColor = new Color3(0.4, 0.8, 1);
-  frostMat.diffuseColor = Color3.Black();
-  frostMat.specularColor = Color3.Black();
-  frostMat.disableLighting = true;
-  frostMat.alpha = 0.32;
+  /** 被減速殭屍的藍色身體發光（HighlightLayer，沿輪廓發藍光） */
+  const slowGlow = new HighlightLayer('slowGlow', scene);
+  slowGlow.innerGlow = true;
+  slowGlow.outerGlow = true;
+  const SLOW_GLOW_COLOR = new Color3(0.25, 0.7, 1);
   /** 依塔種取設定（箭/砲/緩速） */
   const towerCfgOf = (type: string) => (type === 'cannon' ? DEF.cannon : type === 'slow' ? DEF.slow : DEF.tower);
   /** 塔的有效射程（隨等級提升 15%/級） */
@@ -491,7 +496,12 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     const pad = towerPads[i];
     pad.pips.forEach((m) => m.dispose());
     pad.pips = [];
-    const topY = towerCfgOf(pad.type).size + 1.4;
+    /** 依塔目前縮放決定頂端高度：等級點貼著塔頂、說明牌再更上面（不卡素材） */
+    const scale = pad.inst?.scaling.x ?? 1;
+    const top = towerCfgOf(pad.type).size * scale;
+    const plane = towerSignPlanes[i];
+    if (plane) plane.position.y = top + 2.2;
+    const topY = top + 0.9;
     for (let k = 0; k < pad.level; k++) {
       const s = MeshBuilder.CreateSphere('pip', { diameter: 0.55, segments: 8 }, scene);
       s.material = pipMat;
@@ -1006,13 +1016,16 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
           /** 每隻殭屍都有頭頂血條（Boss 較大） */
           const bar = new HpBar(scene, isBoss ? 4 : 1.6, isBoss ? 0.5 : 0.26);
           bar.setEnabled(false);
-          /** 霜凍光球（被緩速時顯示） */
-          const frost = MeshBuilder.CreateSphere('frost', { diameter: isBoss ? 4.5 : 2.2, segments: 6 }, scene);
-          frost.material = frostMat;
-          frost.isPickable = false;
-          frost.setEnabled(false);
+          /** 身體網格（被緩速時加入發光層）：只收實體 Mesh（蒙皮複製體） */
+          const zMeshes: Mesh[] = [];
+          ent.rootNodes.forEach((n) =>
+            (n as TransformNode).getChildMeshes?.().forEach((mm) => {
+              if (mm instanceof Mesh) zMeshes.push(mm);
+            }),
+          );
           zombies.push({
-            frost,
+            meshes: zMeshes,
+            glowing: false,
             type,
             isBoss,
             bar,
@@ -1071,7 +1084,24 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         const inst = m.createInstance(`bomb${i}`);
         inst.isPickable = false;
         inst.setEnabled(false);
-        bombs.push({ inst, active: false, fx: 0, fy: 0, fz: 0, tx: 0, tz: 0, t: 0, dmg: 0 });
+        bombs.push({ inst, active: false, fx: 0, fy: 0, fz: 0, tx: 0, tz: 0, t: 0, dmg: 0, slow: false, slowFactor: 1, splash: DEF.cannon.splash });
+      }
+      /** 藍色緩速炸彈（複製模型 + 藍色發光材質） */
+      const blue = m.clone('slow-bomb-src');
+      if (blue) {
+        blue.isVisible = false;
+        const bm = new StandardMaterial('slow-bomb-mat', scene);
+        bm.emissiveColor = new Color3(0.3, 0.7, 1);
+        bm.diffuseColor = new Color3(0.15, 0.45, 0.85);
+        bm.specularColor = Color3.Black();
+        blue.material = bm;
+        slowBombSrc = blue;
+        for (let i = 0; i < 8; i++) {
+          const inst = blue.createInstance(`sbomb${i}`);
+          inst.isPickable = false;
+          inst.setEnabled(false);
+          bombs.push({ inst, active: false, fx: 0, fy: 0, fz: 0, tx: 0, tz: 0, t: 0, dmg: 0, slow: true, slowFactor: 1, splash: DEF.slow.splash });
+        }
       }
     });
 
@@ -2081,7 +2111,12 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
                 const pad = towerPads[selectedPad];
                 const maxed = pad.level >= DEF.towerMaxLevel;
                 const cost = maxed ? 0 : towerUpgradeCost(pad.type, pad.level + 1);
-                return { type: pad.type, level: pad.level, maxLevel: DEF.towerMaxLevel, cost, maxed, affordable: money >= cost };
+                /** 目前數值：緩速塔顯示減速%、其餘顯示一次幾發 */
+                const detail =
+                  pad.type === 'slow'
+                    ? `減速 ${Math.round((1 - Math.max(0.15, DEF.slow.slowFactor - (pad.level - 1) * 0.05)) * 100)}%`
+                    : `一次 ${Math.max(1, pad.level - 1)} 發`;
+                return { type: pad.type, level: pad.level, maxLevel: DEF.towerMaxLevel, cost, maxed, affordable: money >= cost, detail };
               })()
             : null,
       });
@@ -2206,10 +2241,14 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       /** 浮空牌（動態貼圖，之後可重畫顯示等級/費用） */
       const tex = new DynamicTexture('tpad-tex', { width: 256, height: 140 }, scene, false);
       const plane = MeshBuilder.CreatePlane('tpad-sign', { width: 2.6, height: 1.4 }, scene);
-      plane.position.set(pad.x, 2.4, pad.z);
+      /** 牌子放在塔頂上方（依塔種高度），避免卡進模型 */
+      const baseSize =
+        pad.type === 'cannon' ? CONFIG.defense.cannon.size : pad.type === 'slow' ? CONFIG.defense.slow.size : CONFIG.defense.tower.size;
+      plane.position.set(pad.x, baseSize + 1.6, pad.z);
       plane.billboardMode = Mesh.BILLBOARDMODE_ALL;
       plane.isPickable = false;
       plane.parent = parent;
+      towerSignPlanes.push(plane);
       const smat = new StandardMaterial('tpad-sign-mat', scene);
       smat.diffuseTexture = tex;
       smat.emissiveTexture = tex;
@@ -2550,7 +2589,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     z.entered = false;
     z.slowT = 0;
     z.slowFactor = 1;
-    z.frost?.setEnabled(false);
+    setZombieGlow(z, false);
     /** Boss 血量隨波加成更高 */
     z.hpMax = z.baseHp + (waveNum - 1) * DEF.wave.hpPerWave * (z.isBoss ? 5 : 1);
     z.hp = z.hpMax;
@@ -2607,13 +2646,28 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   }
 
   /** 砲塔發射炸彈：拋向目標，抵達才爆炸（攜帶該次傷害） */
-  function fireBomb(fx: number, fy: number, fz: number, tx: number, tz: number, dmg: number) {
-    const b = bombs.find((q) => !q.active);
+  /** 在落點施加範圍減速（緩速炸彈用） */
+  function applySlowSplash(tx: number, tz: number, splash: number, factor: number) {
+    const sp2 = splash * splash;
+    for (const z of zombies) {
+      if (!z.active || !z.alive) continue;
+      if ((z.x - tx) ** 2 + (z.z - tz) ** 2 <= sp2) {
+        z.slowT = DEF.slow.slowSec;
+        z.slowFactor = z.slowFactor < 1 ? Math.min(z.slowFactor, factor) : factor;
+      }
+    }
+  }
+
+  function fireBomb(fx: number, fy: number, fz: number, tx: number, tz: number, dmg: number, slow = false, slowFactor = 1) {
+    const b = bombs.find((q) => !q.active && q.slow === slow);
     if (!b) {
-      /** 無可用炸彈（模型未載入/池滿）→ 直接在目標爆炸，確保不漏傷害 */
+      /** 無可用炸彈（模型未載入/池滿）→ 直接在目標生效，確保不漏 */
       spawnExplosion(tx, 1.2, tz);
-      const sp2 = DEF.cannon.splash * DEF.cannon.splash;
-      for (const z of zombies) if (z.active && z.alive && (z.x - tx) ** 2 + (z.z - tz) ** 2 <= sp2) damageZombie(z, dmg);
+      if (slow) applySlowSplash(tx, tz, DEF.slow.splash, slowFactor);
+      else {
+        const sp2 = DEF.cannon.splash * DEF.cannon.splash;
+        for (const z of zombies) if (z.active && z.alive && (z.x - tx) ** 2 + (z.z - tz) ** 2 <= sp2) damageZombie(z, dmg);
+      }
       return;
     }
     b.active = true;
@@ -2624,14 +2678,14 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     b.tz = tz;
     b.t = 0;
     b.dmg = dmg;
+    b.slowFactor = slowFactor;
     b.inst.setEnabled(true);
     b.inst.position.set(fx, fy, fz);
   }
 
-  /** 更新所有飛行中的炸彈；抵達目標 → 爆炸 + 範圍傷害 */
+  /** 更新所有飛行中的炸彈；抵達目標 → 爆炸（傷害）或藍色減速 */
   function updateBombs(dt: number) {
     const dur = 0.5;
-    const sp2 = DEF.cannon.splash * DEF.cannon.splash;
     for (const b of bombs) {
       if (!b.active) continue;
       b.t += dt / dur;
@@ -2639,7 +2693,12 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         b.active = false;
         b.inst.setEnabled(false);
         spawnExplosion(b.tx, 1.2, b.tz);
-        for (const z of zombies) if (z.active && z.alive && (z.x - b.tx) ** 2 + (z.z - b.tz) ** 2 <= sp2) damageZombie(z, b.dmg);
+        if (b.slow) {
+          applySlowSplash(b.tx, b.tz, b.splash, b.slowFactor);
+        } else {
+          const sp2 = b.splash * b.splash;
+          for (const z of zombies) if (z.active && z.alive && (z.x - b.tx) ** 2 + (z.z - b.tz) ** 2 <= sp2) damageZombie(z, b.dmg);
+        }
         continue;
       }
       const k = b.t;
@@ -2649,6 +2708,16 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       b.inst.position.set(x, y, z);
       b.inst.rotation.y += dt * 8;
       b.inst.rotation.x += dt * 6;
+    }
+  }
+
+  /** 切換殭屍身體藍光（被緩速時） */
+  function setZombieGlow(z: Zombie, on: boolean) {
+    if (on === z.glowing) return;
+    z.glowing = on;
+    for (const m of z.meshes) {
+      if (on) slowGlow.addMesh(m, SLOW_GLOW_COLOR);
+      else slowGlow.removeMesh(m);
     }
   }
 
@@ -2697,26 +2766,6 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         }
       }
       if (!pad.built) continue;
-      /** 緩速塔：不射擊，對範圍內殭屍持續施加減速（光環），定期噴霜效果 */
-      if (pad.type === 'slow') {
-        const sr = towerRange(pad);
-        const sr2 = sr * sr;
-        /** 等級越高減速越強：每級再 −5% 速度（下限 15%） */
-        const effFactor = Math.max(0.15, DEF.slow.slowFactor - (pad.level - 1) * 0.05);
-        for (const z of zombies) {
-          if (!z.active || !z.alive) continue;
-          if ((z.x - pad.x) ** 2 + (z.z - pad.z) ** 2 <= sr2) {
-            z.slowT = DEF.slow.slowSec;
-            z.slowFactor = z.slowFactor < 1 ? Math.min(z.slowFactor, effFactor) : effFactor; // 取最強的一座
-          }
-        }
-        pad.fireAccum += dt;
-        if (pad.fireAccum >= cfg.interval) {
-          pad.fireAccum = 0;
-          burstAt(muzzleFx, pad.x, 1.6, pad.z, 6); // 霜霧脈衝
-        }
-        continue;
-      }
       /** 已蓋：等級加成傷害/射速/射程 */
       const dmg = cfg.dmg * (1 + (pad.level - 1) * 0.5);
       const interval = cfg.interval / (1 + (pad.level - 1) * 0.35);
@@ -2732,8 +2781,8 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
           best = z;
         }
       }
-      /** 砲管轉向目標（平滑） */
-      if (best && pad.inst) {
+      /** 砲管轉向目標（平滑；緩速塔=消防栓不轉） */
+      if (best && pad.inst && pad.type !== 'slow') {
         const aim = Math.atan2(best.x - pad.x, best.z - pad.z) + TURRET_AIM_OFFSET;
         let cur = pad.inst.rotation.y;
         let diff = aim - cur;
@@ -2754,7 +2803,11 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
                 .sort((a, b) => (a.x - pad.x) ** 2 + (a.z - pad.z) ** 2 - ((b.x - pad.x) ** 2 + (b.z - pad.z) ** 2))
                 .slice(0, shots);
         for (const tgt of targets) {
-          if (pad.type === 'cannon') {
+          if (pad.type === 'slow') {
+            /** 緩速塔：丟藍色炸彈，落點範圍減速（等級越高越強） */
+            const eff = Math.max(0.15, DEF.slow.slowFactor - (pad.level - 1) * 0.05);
+            fireBomb(pad.x, 3.0, pad.z, tgt.x, tgt.z, 0, true, eff);
+          } else if (pad.type === 'cannon') {
             /** 砲塔：丟出炸彈，飛到目標才爆炸（範圍傷害） */
             fireBomb(pad.x, 3.6, pad.z, tgt.x, tgt.z, dmg);
           } else {
@@ -2771,7 +2824,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       if (!z.active) continue;
       if (!z.alive) {
         z.bar?.setEnabled(false); // 死亡動畫時不顯示血條
-        z.frost?.setEnabled(false);
+        setZombieGlow(z, false);
         z.dying -= dt;
         z.root.position.set(z.x, z.yOffset, z.z);
         if (z.dying <= 0) {
@@ -2796,10 +2849,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       }
       const slowed = z.slowT > 0;
       const sp = slowed ? z.speed * z.slowFactor : z.speed;
-      if (z.frost) {
-        z.frost.setEnabled(slowed);
-        if (slowed) z.frost.position.set(z.x, z.isBoss ? 3 : 1.4, z.z);
-      }
+      setZombieGlow(z, slowed);
       if (!z.entered) {
         const step = Math.min(d, sp * dt);
         z.x += (dx / d) * step;
@@ -2842,7 +2892,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
           z.active = false;
           z.root.setEnabled(false);
           z.bar?.setEnabled(false);
-          z.frost?.setEnabled(false);
+          setZombieGlow(z, false);
         }
     }
 
@@ -3079,9 +3129,9 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       houseStation.dispose();
       inn?.dispose();
       houseHolder.dispose();
+      slowGlow.dispose();
       zombies.forEach((z) => {
         z.bar?.dispose();
-        z.frost?.dispose();
         z.root.dispose();
       });
       zombieFleets.forEach((f) => f.container.dispose());
@@ -3091,6 +3141,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       slowSrc?.dispose();
       bombs.forEach((b) => b.inst.dispose());
       bombSrc?.dispose();
+      slowBombSrc?.dispose();
       rangeRing.dispose();
       towerPads.forEach((p) => p.pips.forEach((m) => m.dispose()));
       pipMat.dispose();
