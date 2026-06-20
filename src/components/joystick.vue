@@ -76,5 +76,8 @@ function onUp() {
   height: 42%;
   border-radius: 9999px;
   background: rgba(255, 255, 255, 0.55);
+  /** 觸控穿透到外圈 pad（pad 有 touch-none），避免雙擊正中間觸發瀏覽器縮放 */
+  pointer-events: none;
+  touch-action: none;
 }
 </style>
