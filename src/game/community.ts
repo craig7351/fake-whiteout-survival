@@ -107,21 +107,40 @@ export interface Msg {
   name: string;
   text: string;
   at: number;
+  parentId?: number | null; // 有值＝回覆某則留言
+  replies?: Msg[]; // 前端組串用（非儲存）
 }
 export function getMessages(): Msg[] {
-  return read<Msg[]>(MSG_KEY, []).slice(-60).reverse();
+  return read<Msg[]>(MSG_KEY, []).slice(-80).reverse();
 }
-export function postMessage(name: string, text: string) {
+/** 發表留言（parentId 有值＝回覆） */
+export function postMessage(name: string, text: string, parentId?: number | null) {
   const t = text.trim().slice(0, 120);
   if (!t) return;
   const nm = name.trim().slice(0, 12) || '匿名';
   const all = read<Msg[]>(MSG_KEY, []);
-  all.push({ name: nm, text: t, at: Date.now() });
+  all.push({ name: nm, text: t, at: Date.now(), parentId: parentId ?? null });
   write(MSG_KEY, all.slice(-200));
-  post('/messages', { name: nm, text: t });
+  post('/messages', { name: nm, text: t, parentId: parentId ?? null });
 }
 /** 全球留言（後端）；失敗回 null */
 export const fetchMessages = () => getJSON<Msg[]>('/messages');
+/** 把扁平留言組成「主留言 + 回覆」串（主留言新到舊，回覆舊到新） */
+export function threadMessages(flat: Msg[]): Msg[] {
+  const byId = new Map<number, Msg>();
+  const tops: Msg[] = [];
+  // 先建立節點（複製，附空 replies）
+  const nodes = flat.map((m) => ({ ...m, replies: [] as Msg[] }));
+  for (const n of nodes) if (n.id != null) byId.set(n.id, n);
+  for (const n of nodes) {
+    if (n.parentId != null && byId.has(n.parentId)) byId.get(n.parentId)!.replies!.push(n);
+    else tops.push(n);
+  }
+  // 主留言：新到舊（id 大在前）；回覆：舊到新
+  tops.sort((a, b) => (b.id ?? b.at) - (a.id ?? a.at));
+  for (const t of tops) t.replies!.sort((a, b) => (a.id ?? a.at) - (b.id ?? b.at));
+  return tops;
+}
 /** 版主刪除留言（需正確 key）；成功回 true */
 export async function deleteMessage(id: number, key: string): Promise<boolean> {
   try {

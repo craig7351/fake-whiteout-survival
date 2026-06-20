@@ -158,20 +158,38 @@
               />
               <button class="rounded-lg bg-cyan-500 px-3 py-1.5 text-xs font-black text-white transition hover:bg-cyan-400 active:scale-95" @click="onPost">送出</button>
             </div>
-            <div v-if="messages.length" class="flex flex-col gap-1.5">
-              <div v-for="(m, i) in messages" :key="i" class="group flex items-start gap-1 rounded-lg bg-white/5 px-2 py-1.5 text-xs">
-                <div class="min-w-0 flex-1">
-                  <span class="font-black text-cyan-300">{{ m.name }}</span>
-                  <span class="ml-1 break-words text-slate-200">{{ m.text }}</span>
+            <div v-if="threads.length" class="flex flex-col gap-2">
+              <div v-for="m in threads" :key="m.id ?? m.at" class="rounded-lg bg-white/5 px-2 py-1.5 text-xs">
+                <!-- 主留言 -->
+                <div class="flex items-start gap-1">
+                  <div class="min-w-0 flex-1">
+                    <span class="font-black text-cyan-300">{{ m.name }}</span>
+                    <span class="ml-1 break-words text-slate-200">{{ m.text }}</span>
+                  </div>
+                  <button v-if="m.id" class="shrink-0 px-1 text-[11px] font-bold text-slate-400 hover:text-cyan-300" @click="toggleReply(m.id)">回覆</button>
+                  <button v-if="m.id" class="shrink-0 px-1 text-slate-500 hover:text-rose-400" title="版主刪除" @click="onDelete(m)">✕</button>
                 </div>
-                <button
-                  v-if="m.id"
-                  class="shrink-0 px-1 text-slate-500 hover:text-rose-400"
-                  title="版主刪除"
-                  @click="onDelete(m)"
-                >
-                  ✕
-                </button>
+                <!-- 回覆們 -->
+                <div v-if="m.replies && m.replies.length" class="mt-1 flex flex-col gap-1 border-l-2 border-cyan-300/20 pl-2">
+                  <div v-for="r in m.replies" :key="r.id ?? r.at" class="flex items-start gap-1">
+                    <div class="min-w-0 flex-1">
+                      <span class="font-black text-sky-300">↳ {{ r.name }}</span>
+                      <span class="ml-1 break-words text-slate-300">{{ r.text }}</span>
+                    </div>
+                    <button v-if="r.id" class="shrink-0 px-1 text-slate-500 hover:text-rose-400" title="版主刪除" @click="onDelete(r)">✕</button>
+                  </div>
+                </div>
+                <!-- 回覆輸入 -->
+                <div v-if="replyTo === m.id" class="mt-1.5 flex gap-1">
+                  <input
+                    v-model="replyText"
+                    maxlength="120"
+                    placeholder="回覆…"
+                    class="min-w-0 flex-1 rounded-lg bg-white/10 px-2 py-1.5 text-xs text-slate-100 outline-none ring-1 ring-white/15 placeholder:text-slate-500"
+                    @keydown.enter="m.id != null && onReply(m.id)"
+                  />
+                  <button class="rounded-lg bg-sky-500 px-3 py-1.5 text-xs font-black text-white active:scale-95" @click="m.id != null && onReply(m.id)">送出</button>
+                </div>
               </div>
             </div>
             <div v-else class="py-6 text-center text-sm text-slate-500">還沒有留言,搶頭香!</div>
@@ -199,6 +217,7 @@ import {
   fetchOnline,
   sendHeartbeat,
   deleteMessage,
+  threadMessages,
   type Msg,
 } from '../game/community';
 
@@ -225,6 +244,11 @@ const online = ref(getOnline());
 const name = ref(getName());
 const messages = ref(getMessages());
 const msgText = ref('');
+/** 留言串（主留言 + 回覆） */
+const threads = computed(() => threadMessages(messages.value));
+/** 目前展開回覆輸入的留言 id */
+const replyTo = ref<number | null>(null);
+const replyText = ref('');
 let hbTimer: number | undefined;
 
 /** 彈窗：null=關閉 */
@@ -268,14 +292,28 @@ function onName() {
   setName(name.value);
   name.value = getName();
 }
-function onPost() {
-  if (!msgText.value.trim()) return;
-  postMessage(name.value, msgText.value);
-  msgText.value = '';
+function refreshMessages() {
   messages.value = getMessages();
   void fetchMessages().then((m) => {
     if (m) messages.value = m;
   });
+}
+function onPost() {
+  if (!msgText.value.trim()) return;
+  postMessage(name.value, msgText.value);
+  msgText.value = '';
+  refreshMessages();
+}
+function toggleReply(id: number) {
+  replyTo.value = replyTo.value === id ? null : id;
+  replyText.value = '';
+}
+function onReply(parentId: number) {
+  if (!replyText.value.trim()) return;
+  postMessage(name.value, replyText.value, parentId);
+  replyText.value = '';
+  replyTo.value = null;
+  refreshMessages();
 }
 
 const ADMIN_KEY_LS = 'fake-whiteout:adminKey';

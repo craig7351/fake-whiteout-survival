@@ -36,7 +36,8 @@ CREATE TABLE IF NOT EXISTS messages (
   name TEXT,
   text TEXT,
   device_id TEXT,
-  created_at INTEGER
+  created_at INTEGER,
+  parent_id INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_messages_id ON messages (id DESC);
 
