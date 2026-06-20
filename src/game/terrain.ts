@@ -78,8 +78,8 @@ function snowMaterial(scene: Scene): StandardMaterial {
   tex.update();
   tex.wrapU = Texture.WRAP_ADDRESSMODE;
   tex.wrapV = Texture.WRAP_ADDRESSMODE;
-  tex.uScale = 4;
-  tex.vScale = 4;
+  tex.uScale = 6;
+  tex.vScale = 6;
 
   const material = new StandardMaterial('ground-material', scene);
   material.diffuseTexture = tex;
@@ -89,7 +89,8 @@ function snowMaterial(scene: Scene): StandardMaterial {
 
 /** 建立平整雪原地面。 */
 export function createTerrain(scene: Scene): Mesh {
-  const size = CONFIG.arenaHalf * 9;
+  // 須涵蓋殭屍生成的東側角落（x 最遠約 66）→ 半徑需 ≥ 66
+  const size = CONFIG.arenaHalf * 13;
   const ground = MeshBuilder.CreateGround('ground', { width: size, height: size }, scene);
   ground.material = snowMaterial(scene);
   ground.isPickable = false;

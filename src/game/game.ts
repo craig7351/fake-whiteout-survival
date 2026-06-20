@@ -427,8 +427,6 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   /** ===== 房子防禦戰狀態 ===== */
   const DEF = CONFIG.defense;
   let houseHp = DEF.houseHp;
-  const houseBar = new HpBar(scene, 3.0, 0.4);
-  houseBar.setEnabled(false);
   /** 波次：idle(未開始) / prep(準備) / active(交戰) / broken(房子毀損待修) / won(通關) */
   let waveState: 'idle' | 'prep' | 'active' | 'broken' | 'won' = 'idle';
   let waveNum = 0;
@@ -2629,10 +2627,6 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     if (waveState === 'idle') return;
     updateBombs(dt);
     const H = CONFIG.house;
-    /** 房子血條 */
-    houseBar.setEnabled(true);
-    houseBar.setRatio(Math.max(0, houseHp) / DEF.houseHp);
-    houseBar.setPosition(H.hx, 9, H.hz);
 
     /** 塔射擊細線衰減 */
     for (const t of towerTracers) {
@@ -3007,7 +3001,6 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       houseStation.dispose();
       inn?.dispose();
       houseHolder.dispose();
-      houseBar.dispose();
       zombies.forEach((z) => {
         z.bar?.dispose();
         z.root.dispose();
