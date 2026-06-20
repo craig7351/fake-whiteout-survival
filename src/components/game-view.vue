@@ -131,7 +131,7 @@
           ⏱️ 按下確認後 <span class="text-amber-300">1 分鐘</span> 迎來第一波
         </div>
         <button
-          v-if="stats.money >= 10000"
+          v-if="stats.money >= 5000"
           class="w-full rounded-xl bg-cyan-500 py-3 text-lg font-black text-white shadow-lg transition hover:bg-cyan-400 active:scale-95"
           @click="onStartDefense"
         >
@@ -142,7 +142,7 @@
           disabled
           class="w-full cursor-not-allowed rounded-xl bg-white/10 py-3 text-base font-black text-rose-300/80"
         >
-          需身上有 💰10000 才能開啟（目前 {{ stats.money.toLocaleString() }}）
+          需身上有 💰5000 才能開啟（目前 {{ stats.money.toLocaleString() }}）
         </button>
       </div>
     </div>

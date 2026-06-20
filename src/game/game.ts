@@ -444,7 +444,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     { x: CONFIG.dog.x, z: CONFIG.dog.z, emoji: '🐕', name: '牧羊犬', effect: '自動把地上的肉撿回攤位', hint: '站著付款購買' },
     { x: CONFIG.hunter.x, z: CONFIG.hunter.z, emoji: '🏹', name: '獵人', effect: '自動進牧場打牛取肉', hint: '站著付款購買' },
     { x: CONFIG.cashier.x, z: CONFIG.cashier.z, emoji: '🧑‍💼', name: '收銀員', effect: '自動收銀台的錢', hint: '站著付款購買' },
-    { x: CONFIG.house.x, z: CONFIG.house.z, emoji: '🛡️', name: '開啟塔防', effect: '殭屍來襲，蓋塔守住基地圍欄', hint: '身上滿 $10000 自動開啟（不扣錢）' },
+    { x: CONFIG.house.x, z: CONFIG.house.z, emoji: '🛡️', name: '開啟塔防', effect: '殭屍來襲，蓋塔守住基地圍欄', hint: '身上滿 $5000 自動開啟（不扣錢）' },
     ...WEAPONS.map((w) => ({ x: w.x, z: w.z, emoji: w.emoji, name: w.name, effect: WEAPON_EFFECT[w.id] ?? '', hint: '踩上去購買／切換' })),
     ...CONFIG.house.towerPads.map((p) => ({
       x: p.x,
@@ -1985,7 +1985,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     if (!houseBought) {
       const Hs = CONFIG.house;
       if (near(Hs.x, Hs.z, 2.0)) {
-        /** 不扣錢：身上累積到門檻（$10000）即可開啟塔防；進度條顯示存錢進度 */
+        /** 不扣錢：身上累積到門檻（$5000）即可開啟塔防；進度條顯示存錢進度 */
         houseStation.setProgress(money / Hs.cost);
         if (money >= Hs.cost) {
           houseBought = true;
@@ -3249,7 +3249,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     },
     startDefense() {
       if (!defenseIntroPending) return;
-      if (money < CONFIG.house.cost) return; // 需身上有 $10000 才能開啟（不扣錢）
+      if (money < CONFIG.house.cost) return; // 需身上有 $5000 才能開啟（不扣錢）
       defenseIntroPending = false;
       breaches = 0;
       waveState = 'prep';
