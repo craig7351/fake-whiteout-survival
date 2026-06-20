@@ -12,6 +12,7 @@ import {
   Vector3,
   TransformNode,
   Mesh,
+  VertexData,
   InstancedMesh,
   DynamicTexture,
   AnimationGroup,
@@ -1018,10 +1019,27 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     tex.update();
     return tex;
   }
-  /** 交叉雙平面 billboard 樹（每棵 4 三角面、alpha 鏤空，極省效能） */
+  /** 交叉雙平面 billboard 樹（單一 mesh／4 三角面、alpha 鏤空，可 thin-instance、極省效能） */
   function makeBillboardTree(): Mesh {
     const W = 3.4;
     const H = 4.6;
+    const h = W / 2;
+    /** 兩片垂直交叉的 quad（一片朝 Z、一片朝 X），底部在 y=0 */
+    const positions = [
+      -h, 0, 0, h, 0, 0, h, H, 0, -h, H, 0, // 朝 ±Z
+      0, 0, -h, 0, 0, h, 0, H, h, 0, H, -h, // 朝 ±X
+    ];
+    const uvs = [0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1];
+    const indices = [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7];
+    const normals: number[] = [];
+    VertexData.ComputeNormals(positions, indices, normals);
+    const vd = new VertexData();
+    vd.positions = positions;
+    vd.indices = indices;
+    vd.uvs = uvs;
+    vd.normals = normals;
+    const tree = new Mesh('tree-bb', scene);
+    vd.applyToMesh(tree);
     const mat = new StandardMaterial('tree-bb-mat', scene);
     mat.diffuseTexture = drawPineTexture();
     mat.useAlphaFromDiffuseTexture = true;
@@ -1029,13 +1047,6 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     mat.backFaceCulling = false;
     mat.specularColor = Color3.Black();
     mat.emissiveColor = new Color3(0.28, 0.3, 0.28); // 微提亮避免太暗
-    const p1 = MeshBuilder.CreatePlane('tb1', { width: W, height: H }, scene);
-    p1.position.y = H / 2;
-    const p2 = MeshBuilder.CreatePlane('tb2', { width: W, height: H }, scene);
-    p2.position.y = H / 2;
-    p2.rotation.y = Math.PI / 2;
-    const merged = Mesh.MergeMeshes([p1, p2], true, true);
-    const tree = merged ?? p1;
     tree.material = mat;
     tree.isPickable = false;
     return tree;
