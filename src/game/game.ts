@@ -1079,68 +1079,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         buildBrickYard(b, houseHolder);
       }
     });
-    /** 殭屍池（防禦戰）：每種兵種預先 instantiate 一批，平時停用、開波時啟用 */
-    for (const [type, cfg] of Object.entries(DEF.zombieTypes)) {
-      void loadAnimatedFleet(scene, cfg.model, cfg.size).then((fl) => {
-        if (!fl) return;
-        zombieFleets.push(fl);
-        for (let i = 0; i < cfg.pool; i++) {
-          const ent = fl.container.instantiateModelsToScene((n) => `zb_${type}${i}_${n}`, false);
-          const holder = new TransformNode(`zombie_${type}${i}`, scene);
-          (ent.rootNodes[0] as TransformNode).parent = holder;
-          holder.scaling.setAll(fl.scale);
-          holder.setEnabled(false);
-          ent.rootNodes.forEach((n) => (n as TransformNode).getChildMeshes?.().forEach((m) => (m.isPickable = false)));
-          const g = ent.animationGroups;
-          g.forEach((ag) => ag.stop());
-          const walk = g.find((ag) => /^walk$/i.test(ag.name)) ?? g.find((ag) => /walk|run/i.test(ag.name));
-          const idle = g.find((ag) => /^idle$/i.test(ag.name)) ?? g[0];
-          const attack = g.find((ag) => /idle_attack|attack|punch|bite|sword|slash/i.test(ag.name));
-          const death = g.find((ag) => /death|die/i.test(ag.name));
-          const isBoss = type === 'boss';
-          /** 每隻殭屍都有頭頂血條（Boss 較大） */
-          const bar = new HpBar(scene, isBoss ? 4 : 1.6, isBoss ? 0.5 : 0.26);
-          bar.setEnabled(false);
-          /** 身體網格（被緩速時加入發光層）：只收實體 Mesh（蒙皮複製體） */
-          const zMeshes: Mesh[] = [];
-          ent.rootNodes.forEach((n) =>
-            (n as TransformNode).getChildMeshes?.().forEach((mm) => {
-              if (mm instanceof Mesh) zMeshes.push(mm);
-            }),
-          );
-          zombies.push({
-            meshes: zMeshes,
-            glowing: false,
-            type,
-            isBoss,
-            bar,
-            root: holder,
-            idle,
-            walk,
-            attack,
-            death,
-            animState: 'idle',
-            baseScale: fl.scale,
-            yOffset: fl.yOffset,
-            x: 0,
-            z: 0,
-            hp: 0,
-            hpMax: 0,
-            baseHp: cfg.hp,
-            speed: cfg.speed,
-            dmg: cfg.dmg,
-            reward: cfg.reward,
-            alive: false,
-            active: false,
-            entered: false,
-            dying: 0,
-            attackAccum: 0,
-            slowT: 0,
-            slowFactor: 1,
-          });
-        }
-      });
-    }
+    /** 殭屍池改為「開啟塔防時才建」（buildZombiePool），避免進場就實例化整批，載入更快 */
     /** 塔模型來源：箭塔（Gatling 砲塔）/ 砲塔 */
     void loadProp(scene, '/models/gatling_turret.glb', DEF.tower.size).then((m) => {
       if (m) {
@@ -2352,12 +2291,79 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     }
   }
 
-  /** 開啟塔防：炸開東側樹林、顯示防禦院子（紅磚牆 + 塔位） */
+  /** 殭屍池：開啟塔防時才 instantiate（每種兵種一批，平時停用、開波啟用），避免進場就建整批 */
+  let zombiePoolBuilt = false;
+  function buildZombiePool() {
+    if (zombiePoolBuilt) return;
+    zombiePoolBuilt = true;
+    for (const [type, cfg] of Object.entries(DEF.zombieTypes)) {
+      void loadAnimatedFleet(scene, cfg.model, cfg.size).then((fl) => {
+        if (!fl) return;
+        zombieFleets.push(fl);
+        for (let i = 0; i < cfg.pool; i++) {
+          const ent = fl.container.instantiateModelsToScene((n) => `zb_${type}${i}_${n}`, false);
+          const holder = new TransformNode(`zombie_${type}${i}`, scene);
+          (ent.rootNodes[0] as TransformNode).parent = holder;
+          holder.scaling.setAll(fl.scale);
+          holder.setEnabled(false);
+          ent.rootNodes.forEach((n) => (n as TransformNode).getChildMeshes?.().forEach((m) => (m.isPickable = false)));
+          const g = ent.animationGroups;
+          g.forEach((ag) => ag.stop());
+          const walk = g.find((ag) => /^walk$/i.test(ag.name)) ?? g.find((ag) => /walk|run/i.test(ag.name));
+          const idle = g.find((ag) => /^idle$/i.test(ag.name)) ?? g[0];
+          const attack = g.find((ag) => /idle_attack|attack|punch|bite|sword|slash/i.test(ag.name));
+          const death = g.find((ag) => /death|die/i.test(ag.name));
+          const isBoss = type === 'boss';
+          const bar = new HpBar(scene, isBoss ? 4 : 1.6, isBoss ? 0.5 : 0.26);
+          bar.setEnabled(false);
+          const zMeshes: Mesh[] = [];
+          ent.rootNodes.forEach((n) =>
+            (n as TransformNode).getChildMeshes?.().forEach((mm) => {
+              if (mm instanceof Mesh) zMeshes.push(mm);
+            }),
+          );
+          zombies.push({
+            meshes: zMeshes,
+            glowing: false,
+            type,
+            isBoss,
+            bar,
+            root: holder,
+            idle,
+            walk,
+            attack,
+            death,
+            animState: 'idle',
+            baseScale: fl.scale,
+            yOffset: fl.yOffset,
+            x: 0,
+            z: 0,
+            hp: 0,
+            hpMax: 0,
+            baseHp: cfg.hp,
+            speed: cfg.speed,
+            dmg: cfg.dmg,
+            reward: cfg.reward,
+            alive: false,
+            active: false,
+            entered: false,
+            dying: 0,
+            attackAccum: 0,
+            slowT: 0,
+            slowFactor: 1,
+          });
+        }
+      });
+    }
+  }
+
+  /** 開啟塔防：炸開東側樹林、顯示防禦院子（紅磚牆 + 塔位），並建立殭屍池 */
   function revealHouse() {
     const H = CONFIG.house;
     const y = H.yard;
     treeField?.hideRegion(y.minX - 2, y.maxX + 2, y.minZ - 2, y.maxZ + 2);
     houseHolder.setEnabled(true);
+    buildZombiePool(); // 此時才實例化殭屍（有 60s 準備期可載入）
     spawnExplosion(H.hx, 1.6, H.hz);
     spawnExplosion(H.hx - 3, 1.4, H.hz + 3);
     camShake = 1;

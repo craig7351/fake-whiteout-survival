@@ -30,8 +30,8 @@
         經營肉舖 → 擴張牧場 → 蓋房子 → 蓋塔守城,撐過 30 波
       </p>
 
-      <!-- 線上人數 + 暱稱 -->
-      <div class="mb-4 flex w-full items-center justify-between gap-2 text-xs">
+      <!-- 線上人數 -->
+      <div class="mb-4 flex w-full items-center justify-center text-xs">
         <span class="glass inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 font-bold text-emerald-200">
           <span class="relative flex h-2 w-2">
             <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
@@ -39,15 +39,6 @@
           </span>
           線上 {{ online }} 人
         </span>
-        <label class="flex items-center gap-1.5 text-slate-400">
-          暱稱
-          <input
-            v-model="name"
-            @change="onName"
-            maxlength="12"
-            class="glass w-24 rounded-lg px-2 py-1.5 text-center text-slate-100 outline-none placeholder:text-slate-500"
-          />
-        </label>
       </div>
 
       <!-- 主 CTA -->
@@ -148,15 +139,24 @@
 
           <!-- 留言板 -->
           <template v-else-if="panel === 'messages'">
-            <div class="mb-3 flex gap-1">
+            <div class="mb-3 flex flex-col gap-1">
               <input
-                v-model="msgText"
-                maxlength="120"
-                placeholder="留個言…"
-                class="min-w-0 flex-1 rounded-lg bg-white/10 px-2 py-1.5 text-xs text-slate-100 outline-none ring-1 ring-white/15 placeholder:text-slate-500"
-                @keydown.enter="onPost"
+                v-model="name"
+                @change="onName"
+                maxlength="12"
+                placeholder="你的名字"
+                class="w-full rounded-lg bg-white/10 px-2 py-1.5 text-xs text-slate-100 outline-none ring-1 ring-white/15 placeholder:text-slate-500"
               />
-              <button class="rounded-lg bg-cyan-500 px-3 py-1.5 text-xs font-black text-white transition hover:bg-cyan-400 active:scale-95" @click="onPost">送出</button>
+              <div class="flex gap-1">
+                <input
+                  v-model="msgText"
+                  maxlength="120"
+                  placeholder="留個言…"
+                  class="min-w-0 flex-1 rounded-lg bg-white/10 px-2 py-1.5 text-xs text-slate-100 outline-none ring-1 ring-white/15 placeholder:text-slate-500"
+                  @keydown.enter="onPost"
+                />
+                <button class="rounded-lg bg-cyan-500 px-3 py-1.5 text-xs font-black text-white transition hover:bg-cyan-400 active:scale-95" @click="onPost">送出</button>
+              </div>
             </div>
             <div v-if="threads.length" class="flex flex-col gap-2">
               <div v-for="m in threads" :key="m.id ?? m.at" class="rounded-lg bg-white/5 px-2 py-1.5 text-xs">
