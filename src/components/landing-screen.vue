@@ -22,13 +22,12 @@
 
     <div class="relative z-10 mx-auto flex min-h-full w-full max-w-md flex-col items-center px-5 py-9 text-center">
       <!-- 標題 -->
-      <div class="mb-1 text-5xl drop-shadow-[0_4px_10px_rgba(0,0,0,0.4)]">🥩❄️</div>
       <h1 class="title-text">
         <span class="title-fake">偽</span>寒冰啟示錄
       </h1>
       <p class="mb-2 text-[11px] font-bold tracking-[0.35em] text-cyan-200/70">FAKE WHITEOUT SURVIVAL</p>
       <p class="mb-6 max-w-xs text-xs leading-relaxed text-slate-300/80">
-        經營肉舖 → 擴張牧場 → 蓋房子 → 蓋塔守城,撐過 30 波破關!
+        經營肉舖 → 擴張牧場 → 蓋房子 → 蓋塔守城,撐過 30 波
       </p>
 
       <!-- 線上人數 + 暱稱 -->
