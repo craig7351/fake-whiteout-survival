@@ -76,11 +76,13 @@ export interface GameStats {
   weaponName: string;
   /** 玩家目前踩著的升級地墊（不在任何地墊上則 null） */
   nearUpgrade: NearUpgradeView | null;
-  /** 房子防禦戰：是否進行中、房子血量、波次提示文字 */
+  /** 基地防禦戰：是否進行中、攻入數/上限、波次提示文字、勝負 */
   defenseActive: boolean;
-  houseHp: number;
-  houseMaxHp: number;
+  breaches: number;
+  breachMax: number;
   waveLabel: string;
+  gameOver: boolean; // 失守（攻入達上限）
+  won: boolean; // 通關
   /** 目前點選的塔（升級選單用），未選則 null */
   selectedTower: { type: string; level: number; maxLevel: number; cost: number; maxed: boolean; affordable: boolean; detail: string } | null;
   showDefenseIntro: boolean; // 剛買房子、待玩家確認開啟塔防
@@ -417,14 +419,9 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   let cashierFleet: AnimatedFleet | null = null;
 
   /** ===== 房子（牧場2 對面，買下後炸地長出 + 紅磚圍牆院子） ===== */
-  const houseStation = new BuyStation(scene, CONFIG.house.x, CONFIG.house.z, CONFIG.house.cost, '🏠', '已蓋好房子');
+  const houseStation = new BuyStation(scene, CONFIG.house.x, CONFIG.house.z, CONFIG.house.cost, '🛡️', '已開啟塔防');
   let housePaid = 0;
   let houseBought = false;
-  let inn: Mesh | null = null;
-  let innGrowT = 1; // 長出動畫進度（<1 表示生長中）
-  /** 房子實心碰撞箱半邊長（載入後由包圍盒推得；0＝尚未載入不碰撞） */
-  let innHalfX = 0;
-  let innHalfZ = 0;
   /** 紅磚圍牆＋塔位掛在此節點上，買下房子後一次顯示 */
   const houseHolder = new TransformNode('house-yard', scene);
   houseHolder.setEnabled(false);
@@ -435,16 +432,22 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
 
   /** ===== 房子防禦戰狀態 ===== */
   const DEF = CONFIG.defense;
-  let houseHp = DEF.houseHp;
-  /** 波次：idle(未開始) / prep(準備) / active(交戰) / broken(房子毀損待修) / won(通關) */
-  let waveState: 'idle' | 'prep' | 'active' | 'broken' | 'won' = 'idle';
+  /** 攻入基地的怪物數：達 BREACH_MAX 即遊戲結束 */
+  let breaches = 0;
+  const BREACH_MAX = 10;
+  /** 越過此 x（往西）＝攻入原本基地的圍欄內 */
+  const BASE_BREACH_X = CONFIG.house.yard.minX;
+  /** 殭屍的進攻目標：原本基地中心 */
+  const BASE_CX = 0;
+  const BASE_CZ = -2;
+  /** 波次：idle(未開始) / prep(準備) / active(交戰) / lost(失守) / won(通關) */
+  let waveState: 'idle' | 'prep' | 'active' | 'lost' | 'won' = 'idle';
   let waveNum = 0;
   let waveTimer = 0; // prep 倒數
-  let defenseIntroPending = false; // 剛買房子，等玩家在說明視窗按確認才開打
+  let defenseIntroPending = false; // 剛開啟塔防，等玩家在說明視窗按確認才開打
   let zombiesToSpawn = 0; // 本波還要生成幾隻（一般）
   let bossToSpawn = 0; // 本波還要生成幾隻 Boss
   let zombieSpawnAccum = 0;
-  let repairPaid = 0; // 毀損後修復付款累計
   const zombies: Zombie[] = [];
   const zombieFleets: AnimatedFleet[] = [];
   /** 塔來源 mesh（箭塔/砲塔）+ 各塔位狀態 */
@@ -1018,18 +1021,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     void loadProp(scene, '/models/winter/polar_bear.glb', 3.4).then((b) => {
       if (b) b.position.set(-12, 0, P.cz - P.halfZ - 6);
     });
-    /** 房子（東側樹林，初始隱藏；買下後炸地長出） */
-    void loadProp(scene, '/models/home_blue.glb', CONFIG.house.size).then((m) => {
-      if (m) {
-        m.position.set(CONFIG.house.hx, 0, CONFIG.house.hz);
-        m.setEnabled(false);
-        inn = m;
-        /** 由包圍盒推實心碰撞箱（含玩家半徑緩衝） */
-        const ext = m.getBoundingInfo().boundingBox.extendSize;
-        innHalfX = ext.x + 0.6;
-        innHalfZ = ext.z + 0.6;
-      }
-    });
+    /** （房子已移除：改為「殭屍攻入基地」判定，不再放置房屋模型） */
     /** 紅磚圍牆：沿院子周邊砌兩層磚（西側留缺口對齊走道），掛在 houseHolder 上 */
     void loadProp(scene, '/models/bricks_red.glb', BRICK_SIZE).then((b) => {
       if (b) {
@@ -1950,13 +1942,6 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       }
     }
 
-    /** --- 房子長出動畫（買下後由小變大） --- */
-    if (innGrowT < 1 && inn) {
-      innGrowT = Math.min(1, innGrowT + dt / 0.7);
-      const e = 1 - Math.pow(1 - innGrowT, 3); // easeOutCubic
-      inn.scaling.setAll(e);
-    }
-
     /** --- 牧羊犬／員工／防禦戰 --- */
     updateDogs(dt);
     updateWorkers(dt);
@@ -2136,13 +2121,15 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         weaponName: WEAPONS[equipped].name,
         nearUpgrade: nearUp,
         defenseActive: waveState !== 'idle',
-        houseHp: Math.max(0, Math.round(houseHp)),
-        houseMaxHp: DEF.houseHp,
+        breaches,
+        breachMax: BREACH_MAX,
+        gameOver: waveState === 'lost',
+        won: waveState === 'won',
         waveLabel:
           waveState === 'won'
             ? '🏆 通關！撐過 30 波'
-            : waveState === 'broken'
-              ? `🏚️ 房子毀損！靠近房子修復 💰${DEF.repairCost}`
+            : waveState === 'lost'
+              ? '💀 基地失守！'
               : waveState === 'prep'
               ? `🛡️ 準備中 ${Math.ceil(Math.max(0, waveTimer))}s（下一波 第${waveNum + 1}波）`
               : waveState === 'active'
@@ -2308,24 +2295,19 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     }
   }
 
-  /** 買下房子：炸開東側樹林、房子從小長到大、顯示紅磚院子 */
+  /** 開啟塔防：炸開東側樹林、顯示防禦院子（紅磚牆 + 塔位） */
   function revealHouse() {
     const H = CONFIG.house;
     const y = H.yard;
     treeField?.hideRegion(y.minX - 2, y.maxX + 2, y.minZ - 2, y.maxZ + 2);
     houseHolder.setEnabled(true);
-    if (inn) {
-      inn.setEnabled(true);
-      inn.scaling.setAll(0.01);
-      innGrowT = 0; // 觸發長出動畫
-    }
     spawnExplosion(H.hx, 1.6, H.hz);
     spawnExplosion(H.hx - 3, 1.4, H.hz + 3);
     camShake = 1;
     sound.boom();
     achieve('house');
     /** 不立刻開打：跳出說明視窗，待玩家確認（startDefense）後 1 分鐘迎來第一波 */
-    houseHp = DEF.houseHp;
+    breaches = 0;
     defenseIntroPending = true;
   }
 
@@ -2775,7 +2757,6 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   function updateDefense(dt: number) {
     if (waveState === 'idle') return;
     updateBombs(dt);
-    const H = CONFIG.house;
 
     /** 塔射擊細線衰減 */
     for (const t of towerTracers) {
@@ -2786,7 +2767,6 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     }
 
     /** 蓋塔（站塔位付款）+ 塔自動射擊（升級改點塔開選單） */
-    const stopDist = (Math.max(innHalfX, innHalfZ) || 4) + 0.3;
     for (let i = 0; i < towerPads.length; i++) {
       const pad = towerPads[i];
       const cfg = towerCfgOf(pad.type);
@@ -2884,15 +2864,6 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         }
         continue;
       }
-      /** 尚未進門：先走到東門缺口內側；進門後再走向房子 */
-      const gateX = CONFIG.house.yard.maxX;
-      const gateZ = CONFIG.house.zombieGap.center;
-      const tx = z.entered ? H.hx : gateX - 2.5; // 目標點在門內側，確保穿過
-      const tz = z.entered ? H.hz : gateZ;
-      const dx = tx - z.x;
-      const dz = tz - z.z;
-      const d = Math.hypot(dx, dz) || 1;
-      z.root.rotation.y = Math.atan2(dx, dz);
       /** 緩速塔減速：slowT>0 時移動速度乘上 slowFactor，並顯示藍色霜凍光球 */
       if (z.slowT > 0) {
         z.slowT -= dt;
@@ -2901,26 +2872,40 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       const slowed = z.slowT > 0;
       const sp = slowed ? z.speed * z.slowFactor : z.speed;
       setZombieGlow(z, slowed);
-      if (!z.entered) {
-        const step = Math.min(d, sp * dt);
-        z.x += (dx / d) * step;
-        z.z += (dz / d) * step;
-        if (z.x <= gateX - 1.5) z.entered = true; // 已穿過東門
-        setZombieAnim(z, 'walk');
-      } else if (d > stopDist) {
-        const step = Math.min(d - stopDist, sp * dt);
-        z.x += (dx / d) * step;
-        z.z += (dz / d) * step;
-        setZombieAnim(z, 'walk');
-      } else {
-        setZombieAnim(z, 'attack');
-        z.attackAccum += dt;
-        if (z.attackAccum >= DEF.zombie.attackInterval) {
-          z.attackAccum = 0;
-          houseHp -= z.dmg;
-          floatText.spawn(`-${z.dmg}`, H.hx + (Math.random() - 0.5) * 3, 7, H.hz + (Math.random() - 0.5) * 3, '#ff6b6b', 0.9);
+      /** 已攻入基地（越過圍欄）→ 計入侵、移除該怪；達上限即失守 */
+      if (z.x <= BASE_BREACH_X) {
+        breaches++;
+        camShake = Math.max(camShake, 0.6);
+        sound.boom();
+        floatText.spawn(`🧟 攻入! ${breaches}/${BREACH_MAX}`, z.x, 4, z.z, '#ff6b6b', 1.4);
+        z.active = false;
+        z.alive = false;
+        z.root.setEnabled(false);
+        z.bar?.setEnabled(false);
+        setZombieGlow(z, false);
+        if (breaches >= BREACH_MAX && waveState !== 'lost') {
+          waveState = 'lost';
+          zombiesToSpawn = 0;
+          bossToSpawn = 0;
+          for (const q of zombies)
+            if (q.active) {
+              q.active = false;
+              q.root.setEnabled(false);
+              q.bar?.setEnabled(false);
+              setZombieGlow(q, false);
+            }
         }
+        continue;
       }
+      /** 走向基地中心 */
+      const dx = BASE_CX - z.x;
+      const dz = BASE_CZ - z.z;
+      const d = Math.hypot(dx, dz) || 1;
+      z.root.rotation.y = Math.atan2(dx, dz);
+      const step = Math.min(d, sp * dt);
+      z.x += (dx / d) * step;
+      z.z += (dz / d) * step;
+      setZombieAnim(z, 'walk');
       z.root.position.set(z.x, z.yOffset, z.z);
       /** 頭頂血條（每隻都有，Boss 較高大） */
       if (z.bar) {
@@ -2930,26 +2915,8 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       }
     }
 
-    /** 房子被打爆 → 毀損狀態，清掉殭屍、等玩家靠近付錢修復 */
-    if (houseHp <= 0 && waveState !== 'broken') {
-      houseHp = 0;
-      waveState = 'broken';
-      camShake = 1;
-      sound.boom();
-      zombiesToSpawn = 0;
-      bossToSpawn = 0;
-      for (const z of zombies)
-        if (z.active) {
-          z.active = false;
-          z.root.setEnabled(false);
-          z.bar?.setEnabled(false);
-          setZombieGlow(z, false);
-        }
-    }
-
     if (waveState === 'prep') {
       waveTimer -= dt;
-      if (houseHp < DEF.houseHp) houseHp = Math.min(DEF.houseHp, houseHp + DEF.houseRegen * dt);
       if (waveTimer <= 0) {
         waveNum++;
         if (waveNum > bestWaveReached) bestWaveReached = waveNum;
@@ -2981,33 +2948,18 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         /** 本波清空：給獎勵 */
         const reward = DEF.wave.clearReward + (waveNum - 1) * DEF.wave.rewardPerWave;
         money += reward;
-        floatText.spawn(`第 ${waveNum} 波清空 +$${reward}`, H.hx, 7, H.hz, '#7cf08a', 1.6);
+        floatText.spawn(`第 ${waveNum} 波清空 +$${reward}`, BASE_CX, 7, BASE_CZ, '#7cf08a', 1.6);
         if (waveNum >= 10) achieve('wave10');
         if (waveNum >= 20) achieve('wave20');
         if (waveNum >= DEF.winWave) {
           /** 通關！ */
           achieve('win');
           waveState = 'won';
-          floatText.spawn('🏆 通關！撐過 30 波！', H.hx, 9, H.hz, '#ffe066', 2.4);
+          floatText.spawn('🏆 通關！撐過 30 波！', BASE_CX, 9, BASE_CZ, '#ffe066', 2.4);
           sound.upgrade();
         } else {
           waveState = 'prep';
           waveTimer = DEF.prepSec;
-        }
-      }
-    } else if (waveState === 'broken') {
-      /** 靠近房子付錢修復 */
-      const pd = Math.hypot(player.position.x - H.hx, player.position.z - H.hz);
-      if (pd < 10 && money > 0) {
-        const pay = Math.min(DEF.repairCost - repairPaid, money, (DEF.repairCost / 2) * dt);
-        repairPaid += pay;
-        money -= pay;
-        if (repairPaid >= DEF.repairCost - 0.001) {
-          repairPaid = 0;
-          houseHp = DEF.houseHp;
-          waveState = 'prep';
-          waveTimer = DEF.prepSec;
-          sound.upgrade();
         }
       }
     }
@@ -3130,16 +3082,6 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       p.x = bx;
       p.z = bz;
     }
-    /** 推出房子實心碰撞箱（撞到就沿最短邊推開） */
-    if (houseBought && innHalfX > 0) {
-      const H = CONFIG.house;
-      const dx = p.x - H.hx;
-      const dz = p.z - H.hz;
-      if (Math.abs(dx) < innHalfX && Math.abs(dz) < innHalfZ) {
-        if (innHalfX - Math.abs(dx) < innHalfZ - Math.abs(dz)) p.x = H.hx + (dx >= 0 ? innHalfX : -innHalfX);
-        else p.z = H.hz + (dz >= 0 ? innHalfZ : -innHalfZ);
-      }
-    }
   }
 
   engine.runRenderLoop(() => scene.render());
@@ -3178,7 +3120,6 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       hunterStation.dispose();
       cashierStation.dispose();
       houseStation.dispose();
-      inn?.dispose();
       houseHolder.dispose();
       slowGlow.dispose();
       zombies.forEach((z) => {
@@ -3248,7 +3189,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     startDefense() {
       if (!defenseIntroPending) return;
       defenseIntroPending = false;
-      houseHp = DEF.houseHp;
+      breaches = 0;
       waveState = 'prep';
       waveTimer = 60; // 1 分鐘後第一波
     },
@@ -3269,7 +3210,8 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       zombiesToSpawn = 0;
       bossToSpawn = 0;
       waveNum = Math.max(1, Math.round(n)) - 1;
-      houseHp = DEF.houseHp;
+      breaches = 0;
+      defenseIntroPending = false;
       waveState = 'prep';
       waveTimer = 0.2; // 幾乎立刻開打該波
     },

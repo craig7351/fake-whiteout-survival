@@ -41,14 +41,15 @@
       {{ stats.waveLabel }}
     </div>
     <div class="flex items-center gap-2">
-      <span class="text-lg">🏠</span>
+      <span class="text-lg">🛡️</span>
       <div class="h-3.5 w-44 overflow-hidden rounded-full bg-slate-900/55 ring-1 ring-cyan-200/15 sm:w-56">
         <div
           class="h-full rounded-full transition-[width] duration-150"
-          :class="houseRatio > 0.5 ? 'bg-emerald-400' : houseRatio > 0.25 ? 'bg-amber-400' : 'bg-rose-500'"
-          :style="{ width: `${houseRatio * 100}%` }"
+          :class="breachRatio < 0.5 ? 'bg-emerald-400' : breachRatio < 0.8 ? 'bg-amber-400' : 'bg-rose-500'"
+          :style="{ width: `${breachRatio * 100}%` }"
         />
       </div>
+      <span class="text-xs font-black text-rose-200">{{ stats.breaches }}/{{ stats.breachMax }}</span>
     </div>
   </div>
 
@@ -88,7 +89,7 @@ import { computed } from 'vue';
 import type { GameStats } from '../game/game';
 
 const props = defineProps<{ stats: GameStats }>();
-const houseRatio = computed(() => (props.stats.houseMaxHp > 0 ? Math.max(0, Math.min(1, props.stats.houseHp / props.stats.houseMaxHp)) : 0));
+const breachRatio = computed(() => (props.stats.breachMax > 0 ? Math.max(0, Math.min(1, props.stats.breaches / props.stats.breachMax)) : 0));
 /** 避開瀏海/動態島 */
 const safeTop = { top: 'max(0.75rem, env(safe-area-inset-top))' };
 </script>

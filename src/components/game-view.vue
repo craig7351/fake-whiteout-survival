@@ -119,8 +119,8 @@
         <div class="mb-2 text-4xl">🏰🛡️</div>
         <div class="mb-1 text-xl font-black text-cyan-200">塔防模式開啟!</div>
         <p class="mb-4 text-sm leading-relaxed text-slate-300">
-          房子蓋好了!殭屍即將來襲。<br />
-          在院子四周蓋 🏹箭塔 / 💣砲塔 / ❄️緩速塔 守住房子,<br />
+          殭屍即將來襲!在院子四周蓋 🏹箭塔 / 💣砲塔 / ❄️緩速塔 攔截,<br />
+          別讓 <span class="font-black text-rose-300">10 隻</span> 殭屍攻入基地圍欄,<br />
           撐過 <span class="font-black text-amber-300">30 波</span> 即可破關!
         </p>
         <div class="mb-4 rounded-xl bg-cyan-500/10 px-3 py-2 text-sm font-bold text-cyan-200 ring-1 ring-cyan-300/20">
@@ -131,6 +131,25 @@
           @click="onStartDefense"
         >
           確認,開始備戰!
+        </button>
+      </div>
+    </div>
+
+    <!-- 遊戲結束 / 通關 -->
+    <div v-if="stats.gameOver || stats.won" class="absolute inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-5 backdrop-blur-md">
+      <div class="w-full max-w-sm rounded-2xl bg-slate-900/95 p-6 text-center text-slate-100 shadow-2xl ring-1" :class="stats.won ? 'ring-amber-300/40' : 'ring-rose-400/40'">
+        <div class="mb-2 text-5xl">{{ stats.won ? '🏆' : '💀' }}</div>
+        <div class="mb-1 text-2xl font-black" :class="stats.won ? 'text-amber-300' : 'text-rose-300'">
+          {{ stats.won ? '通關!' : '基地失守!' }}
+        </div>
+        <p class="mb-5 text-sm text-slate-300">
+          {{ stats.won ? '你撐過了 30 波,成功守住基地!' : '10 隻殭屍攻入了基地圍欄…' }}
+        </p>
+        <button
+          class="w-full rounded-xl bg-cyan-500 py-3 text-lg font-black text-white shadow-lg transition hover:bg-cyan-400 active:scale-95"
+          @click="onRestart"
+        >
+          再玩一次
         </button>
       </div>
     </div>
@@ -161,8 +180,10 @@ const stats = reactive<GameStats>({
   weaponName: '大砍刀',
   nearUpgrade: null,
   defenseActive: false,
-  houseHp: 0,
-  houseMaxHp: 0,
+  breaches: 0,
+  breachMax: 10,
+  gameOver: false,
+  won: false,
   waveLabel: '',
   selectedTower: null,
   showDefenseIntro: false,
@@ -247,6 +268,9 @@ function onTowerClose() {
 function onStartDefense() {
   sound.enable();
   game?.startDefense();
+}
+function onRestart() {
+  location.reload();
 }
 function onToggleMute() {
   muted.value = !muted.value;
