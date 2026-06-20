@@ -85,6 +85,16 @@
       <span v-if="!stats.nearUpgrade.affordable">（錢不夠）</span>
     </div>
   </div>
+
+  <!-- 靠近功能框：說明卡（解決看不懂地上圖案） -->
+  <div
+    v-if="stats.nearInfo && !stats.nearUpgrade"
+    class="pointer-events-none absolute bottom-32 left-1/2 z-20 -translate-x-1/2 rounded-2xl bg-slate-950/80 px-6 py-3 text-center text-white shadow-2xl ring-1 ring-cyan-200/20 backdrop-blur-md"
+  >
+    <div class="text-lg font-black sm:text-xl">{{ stats.nearInfo.emoji }} {{ stats.nearInfo.name }}</div>
+    <div class="mt-0.5 text-sm text-cyan-200">{{ stats.nearInfo.effect }}</div>
+    <div class="mt-1 text-xs text-slate-300">{{ stats.nearInfo.hint }}</div>
+  </div>
 </template>
 
 <script setup lang="ts">

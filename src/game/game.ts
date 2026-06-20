@@ -56,6 +56,13 @@ export interface NearUpgradeView {
   maxed: boolean;
 }
 
+export interface NearInfoView {
+  emoji: string;
+  name: string;
+  effect: string;
+  hint: string;
+}
+
 export interface GameStats {
   fps: number;
   gameTime: number; // 遊戲進行秒數
@@ -77,6 +84,8 @@ export interface GameStats {
   weaponName: string;
   /** 玩家目前踩著的升級地墊（不在任何地墊上則 null） */
   nearUpgrade: NearUpgradeView | null;
+  /** 玩家靠近的功能框說明（看不懂圖案時的提示卡），不在附近則 null */
+  nearInfo: NearInfoView | null;
   /** 基地防禦戰：是否進行中、攻入數/上限、波次提示文字、勝負 */
   defenseActive: boolean;
   breaches: number;
@@ -396,22 +405,22 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   void setupFences();
 
   /** ===== 炸藥購買框：站著付滿 💲500 即炸開牧場2 ===== */
-  const dynamiteStation = new BuyStation(scene, CONFIG.dynamite.x, CONFIG.dynamite.z, CONFIG.dynamite.cost, '🧨', '牧場2 已開通');
+  const dynamiteStation = new BuyStation(scene, CONFIG.dynamite.x, CONFIG.dynamite.z, CONFIG.dynamite.cost, '🧨', '炸藥', '炸開牧場2', '牧場2 已開通');
   let dynamitePaid = 0;
   let pasture2Unlocked = false;
   /** 爆炸時的畫面震動強度（1→0 衰減） */
   let camShake = 0;
 
   /** ===== 牧羊犬購買框：站著付滿 💲300 召喚一隻會自動撿肉的狗 ===== */
-  const dogStation = new BuyStation(scene, CONFIG.dog.x, CONFIG.dog.z, CONFIG.dog.cost, '🐕', '已有狗狗幫手');
+  const dogStation = new BuyStation(scene, CONFIG.dog.x, CONFIG.dog.z, CONFIG.dog.cost, '🐕', '牧羊犬', '自動撿肉回攤位', '已有狗狗幫手');
   let dogPaid = 0;
   let dogBought = false;
   const dogs: Dog[] = [];
   let dogFleet: AnimatedFleet | null = null;
 
   /** ===== 自動化員工：獵人（自動打怪）、收銀員（自動收錢） ===== */
-  const hunterStation = new BuyStation(scene, CONFIG.hunter.x, CONFIG.hunter.z, CONFIG.hunter.cost, '🏹', '已雇用獵人');
-  const cashierStation = new BuyStation(scene, CONFIG.cashier.x, CONFIG.cashier.z, CONFIG.cashier.cost, '🧑‍💼', '已雇用收銀員');
+  const hunterStation = new BuyStation(scene, CONFIG.hunter.x, CONFIG.hunter.z, CONFIG.hunter.cost, '🏹', '獵人', '自動打牛取肉', '已雇用獵人');
+  const cashierStation = new BuyStation(scene, CONFIG.cashier.x, CONFIG.cashier.z, CONFIG.cashier.cost, '🧑‍💼', '收銀員', '自動收銀台的錢', '已雇用收銀員');
   let hunterPaid = 0;
   let hunterBought = false;
   let cashierPaid = 0;
@@ -421,8 +430,23 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   let cashierFleet: AnimatedFleet | null = null;
 
   /** ===== 房子（牧場2 對面，買下後炸地長出 + 紅磚圍牆院子） ===== */
-  const houseStation = new BuyStation(scene, CONFIG.house.x, CONFIG.house.z, CONFIG.house.cost, '🛡️', '已開啟塔防');
+  const houseStation = new BuyStation(scene, CONFIG.house.x, CONFIG.house.z, CONFIG.house.cost, '🛡️', '開啟塔防', '殭屍來襲守城', '已開啟塔防', true);
   let houseBought = false;
+
+  /** 靠近功能框時顯示的說明（解決「看不懂地上圖案」） */
+  const WEAPON_EFFECT: Record<string, string> = {
+    sword: '快速橫掃，一次掃到多隻',
+    axe: '攻擊時旋轉，打到周圍全部敵人',
+    smg: '遠距離快速掃射',
+  };
+  const infoPoints: { x: number; z: number; emoji: string; name: string; effect: string; hint: string }[] = [
+    { x: CONFIG.dynamite.x, z: CONFIG.dynamite.z, emoji: '🧨', name: '炸藥', effect: '炸開牧場2（出現肉×2、血×2 強化怪）', hint: '站著付款購買' },
+    { x: CONFIG.dog.x, z: CONFIG.dog.z, emoji: '🐕', name: '牧羊犬', effect: '自動把地上的肉撿回攤位', hint: '站著付款購買' },
+    { x: CONFIG.hunter.x, z: CONFIG.hunter.z, emoji: '🏹', name: '獵人', effect: '自動進牧場打牛取肉', hint: '站著付款購買' },
+    { x: CONFIG.cashier.x, z: CONFIG.cashier.z, emoji: '🧑‍💼', name: '收銀員', effect: '自動收銀台的錢', hint: '站著付款購買' },
+    { x: CONFIG.house.x, z: CONFIG.house.z, emoji: '🛡️', name: '開啟塔防', effect: '殭屍來襲，蓋塔守住基地圍欄', hint: '身上滿 $10000 自動開啟（不扣錢）' },
+    ...WEAPONS.map((w) => ({ x: w.x, z: w.z, emoji: w.emoji, name: w.name, effect: WEAPON_EFFECT[w.id] ?? '', hint: '踩上去購買／切換' })),
+  ];
   /** 紅磚圍牆＋塔位掛在此節點上，買下房子後一次顯示 */
   const houseHolder = new TransformNode('house-yard', scene);
   houseHolder.setEnabled(false);
@@ -1773,6 +1797,19 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     meatFly.update(dt);
     floatText.update(dt);
 
+    /** --- 靠近功能框 → 說明卡（解決看不懂地上圖案） --- */
+    let nearInfoView: NearInfoView | null = null;
+    {
+      let bestD = 2.4 * 2.4;
+      for (const ip of infoPoints) {
+        const q = (player.position.x - ip.x) ** 2 + (player.position.z - ip.z) ** 2;
+        if (q < bestD) {
+          bestD = q;
+          nearInfoView = { emoji: ip.emoji, name: ip.name, effect: ip.effect, hint: ip.hint };
+        }
+      }
+    }
+
     /** --- 升級 --- */
     let nearUp: NearUpgradeView | null = null;
     upgradeAccum += dt;
@@ -2129,6 +2166,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         weaponEmoji: WEAPONS[equipped].emoji,
         weaponName: WEAPONS[equipped].name,
         nearUpgrade: nearUp,
+        nearInfo: nearInfoView,
         defenseActive: waveState !== 'idle',
         breaches,
         breachMax: BREACH_MAX,
@@ -3617,24 +3655,27 @@ class WeaponStation {
 
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    /** 武器圖案 */
-    ctx.font = '104px sans-serif';
-    ctx.fillText(this.def.emoji, W / 2, 84);
+    /** 武器圖案 + 名稱 */
+    ctx.font = '84px sans-serif';
+    ctx.fillText(this.def.emoji, W / 2, 64);
+    ctx.font = 'bold 40px sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(this.def.name, W / 2, 126);
 
     if (this.bought) {
-      ctx.font = 'bold 44px sans-serif';
+      ctx.font = 'bold 42px sans-serif';
       ctx.fillStyle = this.equippedNow ? '#9af0b0' : '#cfe6ff';
-      ctx.fillText(this.equippedNow ? '裝備中' : '踩上裝備', W / 2, 178);
+      ctx.fillText(this.equippedNow ? '✓ 裝備中' : '踩上裝備', W / 2, 188);
     } else {
       /** 價格 */
-      ctx.font = 'bold 54px sans-serif';
+      ctx.font = 'bold 48px sans-serif';
       ctx.fillStyle = '#ffd24a';
-      ctx.fillText(`💰${this.def.cost}`, W / 2, 162);
+      ctx.fillText(`💰${this.def.cost}`, W / 2, 178);
       /** 進度條（左→右填綠） */
       const ix = 34;
-      const iy = 200;
+      const iy = 210;
       const iw = W - 68;
-      const ih = 38;
+      const ih = 32;
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
       roundRect(ctx, ix, iy, iw, ih, 14);
       ctx.fill();
@@ -3662,7 +3703,10 @@ class BuyStation {
     z: number,
     private cost: number,
     private emoji: string,
+    private title: string,
+    private effect: string,
     private doneText: string,
+    private requireMode = false,
   ) {
     const ground = MeshBuilder.CreateGround('dyn-zone', { width: 3.0, height: 3.0 }, scene);
     ground.position.set(x, 0.06, z);
@@ -3710,26 +3754,33 @@ class BuyStation {
     ctx.stroke();
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = '104px sans-serif';
-    ctx.fillText(this.emoji, W / 2, 84);
+    ctx.font = '74px sans-serif';
+    ctx.fillText(this.emoji, W / 2, 56);
+    /** 名稱 + 一句效果（讓人看懂功用） */
+    ctx.font = 'bold 38px sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(this.title, W / 2, 112);
+    ctx.font = '26px sans-serif';
+    ctx.fillStyle = '#bcd6ff';
+    ctx.fillText(this.effect, W / 2, 146);
     if (this.done) {
-      ctx.font = 'bold 36px sans-serif';
+      ctx.font = 'bold 34px sans-serif';
       ctx.fillStyle = '#9af0b0';
-      ctx.fillText(this.doneText, W / 2, 178);
+      ctx.fillText(this.doneText, W / 2, 196);
     } else {
-      ctx.font = 'bold 54px sans-serif';
+      ctx.font = 'bold 42px sans-serif';
       ctx.fillStyle = '#ffd24a';
-      ctx.fillText(`💰${this.cost}`, W / 2, 162);
+      ctx.fillText(this.requireMode ? `需💰${this.cost}` : `💰${this.cost}`, W / 2, 184);
       const ix = 34;
-      const iy = 200;
+      const iy = 212;
       const iw = W - 68;
-      const ih = 38;
+      const ih = 30;
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
-      roundRect(ctx, ix, iy, iw, ih, 14);
+      roundRect(ctx, ix, iy, iw, ih, 12);
       ctx.fill();
       if (this.progress > 0.01) {
         ctx.fillStyle = 'rgba(90,220,120,0.95)';
-        roundRect(ctx, ix, iy, Math.max(14, iw * this.progress), ih, 14);
+        roundRect(ctx, ix, iy, Math.max(12, iw * this.progress), ih, 12);
         ctx.fill();
       }
     }

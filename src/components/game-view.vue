@@ -210,6 +210,7 @@ const stats = reactive<GameStats>({
   weaponEmoji: '🗡️',
   weaponName: '大砍刀',
   nearUpgrade: null,
+  nearInfo: null,
   defenseActive: false,
   breaches: 0,
   breachMax: 10,
