@@ -319,6 +319,7 @@ interface Zombie {
   entered: boolean; // 是否已從東門進入院子（先走到門口，再走向房子）
   dying: number;
   attackAccum: number;
+  slowT: number; // 緩速塔減速剩餘秒數（>0 表示移動減速中）
 }
 
 export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {}): GameHandle {
@@ -440,6 +441,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   /** 塔來源 mesh（箭塔/砲塔）+ 各塔位狀態 */
   let towerSrc: Mesh | null = null;
   let cannonSrc: Mesh | null = null;
+  let slowSrc: Mesh | null = null;
   /** 砲塔炸彈投射物（飛到目標才爆炸） */
   let bombSrc: Mesh | null = null;
   interface Bomb {
@@ -471,15 +473,16 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   pipMat.diffuseColor = Color3.Black();
   pipMat.specularColor = Color3.Black();
   pipMat.disableLighting = true;
+  /** 依塔種取設定（箭/砲/緩速） */
+  const towerCfgOf = (type: string) => (type === 'cannon' ? DEF.cannon : type === 'slow' ? DEF.slow : DEF.tower);
   /** 塔的有效射程（隨等級提升 15%/級） */
-  const towerRange = (pad: (typeof towerPads)[number]) =>
-    (pad.type === 'cannon' ? DEF.cannon.range : DEF.tower.range) * (1 + (pad.level - 1) * 0.15);
+  const towerRange = (pad: (typeof towerPads)[number]) => towerCfgOf(pad.type).range * (1 + (pad.level - 1) * 0.15);
   /** 重建塔頭頂的等級圓點（數量＝等級） */
   function setTowerPips(i: number) {
     const pad = towerPads[i];
     pad.pips.forEach((m) => m.dispose());
     pad.pips = [];
-    const topY = (pad.type === 'cannon' ? DEF.cannon.size : DEF.tower.size) + 1.4;
+    const topY = towerCfgOf(pad.type).size + 1.4;
     for (let k = 0; k < pad.level; k++) {
       const s = MeshBuilder.CreateSphere('pip', { diameter: 0.55, segments: 8 }, scene);
       s.material = pipMat;
@@ -490,16 +493,16 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     }
   }
   /** 塔升級到第 lvl 級的花費（lvl 從 1 起） */
-  const towerUpgradeCost = (type: 'arrow' | 'cannon', lvl: number) =>
-    Math.floor((type === 'cannon' ? DEF.cannon.cost : DEF.tower.cost) * 0.8 * Math.pow(1.7, lvl));
+  const towerUpgradeCost = (type: string, lvl: number) =>
+    Math.floor(towerCfgOf(type).cost * 0.8 * Math.pow(1.7, lvl));
   /** 塔位牌依狀態重畫 */
   function refreshTowerSign(i: number) {
     const pad = towerPads[i];
     const tex = towerSigns[i];
     if (!tex) return;
-    const emoji = pad.type === 'cannon' ? '💣' : '🏹';
+    const emoji = pad.type === 'cannon' ? '💣' : pad.type === 'slow' ? '❄️' : '🏹';
     if (!pad.built) {
-      drawTowerSign(tex, emoji, `$${pad.type === 'cannon' ? DEF.cannon.cost : DEF.tower.cost}`);
+      drawTowerSign(tex, emoji, `$${towerCfgOf(pad.type).cost}`);
     } else if (pad.level >= DEF.towerMaxLevel) {
       drawTowerSign(tex, emoji, `Lv.${pad.level} MAX`, '#9af0b0');
     } else {
@@ -1019,6 +1022,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
             entered: false,
             dying: 0,
             attackAccum: 0,
+            slowT: 0,
           });
         }
       });
@@ -1034,6 +1038,12 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       if (m) {
         m.isVisible = false;
         cannonSrc = m;
+      }
+    });
+    void loadProp(scene, '/models/firehydrant.glb', DEF.slow.size).then((m) => {
+      if (m) {
+        m.isVisible = false;
+        slowSrc = m;
       }
     });
     /** 砲塔炸彈投射物池 */
@@ -2522,6 +2532,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     z.x = y.maxX + 16 + Math.random() * 6;
     z.z = -38 + Math.random() * 54;
     z.entered = false;
+    z.slowT = 0;
     /** Boss 血量隨波加成更高 */
     z.hpMax = z.baseHp + (waveNum - 1) * DEF.wave.hpPerWave * (z.isBoss ? 5 : 1);
     z.hp = z.hpMax;
@@ -2640,7 +2651,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     const stopDist = (Math.max(innHalfX, innHalfZ) || 4) + 0.3;
     for (let i = 0; i < towerPads.length; i++) {
       const pad = towerPads[i];
-      const cfg = pad.type === 'cannon' ? DEF.cannon : DEF.tower;
+      const cfg = towerCfgOf(pad.type);
       if (!pad.built && near(pad.x, pad.z, 2.0) && money > 0) {
         /** 蓋塔 */
         const pay = Math.min(cfg.cost - pad.paid, money, (cfg.cost / WEAPON_BUY_TIME) * dt);
@@ -2654,7 +2665,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         if (pad.paid >= cfg.cost - 0.001) {
           pad.built = true;
           pad.level = 1;
-          const src = pad.type === 'cannon' ? cannonSrc : towerSrc;
+          const src = pad.type === 'cannon' ? cannonSrc : pad.type === 'slow' ? slowSrc : towerSrc;
           if (src) {
             const inst = src.createInstance('tower');
             inst.position.set(pad.x, 0, pad.z);
@@ -2668,6 +2679,21 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         }
       }
       if (!pad.built) continue;
+      /** 緩速塔：不射擊，對範圍內殭屍持續施加減速（光環），定期噴霜效果 */
+      if (pad.type === 'slow') {
+        const sr = towerRange(pad);
+        const sr2 = sr * sr;
+        for (const z of zombies) {
+          if (!z.active || !z.alive) continue;
+          if ((z.x - pad.x) ** 2 + (z.z - pad.z) ** 2 <= sr2) z.slowT = DEF.slow.slowSec;
+        }
+        pad.fireAccum += dt;
+        if (pad.fireAccum >= cfg.interval) {
+          pad.fireAccum = 0;
+          burstAt(muzzleFx, pad.x, 1.6, pad.z, 6); // 霜霧脈衝
+        }
+        continue;
+      }
       /** 已蓋：等級加成傷害/射速/射程 */
       const dmg = cfg.dmg * (1 + (pad.level - 1) * 0.5);
       const interval = cfg.interval / (1 + (pad.level - 1) * 0.35);
@@ -2730,14 +2756,17 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       const dz = tz - z.z;
       const d = Math.hypot(dx, dz) || 1;
       z.root.rotation.y = Math.atan2(dx, dz);
+      /** 緩速塔減速：slowT>0 時移動速度乘上 slowFactor */
+      if (z.slowT > 0) z.slowT -= dt;
+      const sp = z.slowT > 0 ? z.speed * DEF.slow.slowFactor : z.speed;
       if (!z.entered) {
-        const step = Math.min(d, z.speed * dt);
+        const step = Math.min(d, sp * dt);
         z.x += (dx / d) * step;
         z.z += (dz / d) * step;
         if (z.x <= gateX - 1.5) z.entered = true; // 已穿過東門
         setZombieAnim(z, 'walk');
       } else if (d > stopDist) {
-        const step = Math.min(d - stopDist, z.speed * dt);
+        const step = Math.min(d - stopDist, sp * dt);
         z.x += (dx / d) * step;
         z.z += (dz / d) * step;
         setZombieAnim(z, 'walk');
@@ -2789,13 +2818,20 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     } else if (waveState === 'active') {
       if (zombiesToSpawn > 0 || bossToSpawn > 0) {
         zombieSpawnAccum += dt;
-        if (zombieSpawnAccum >= DEF.wave.spawnGap && zombies.some((q) => !q.active)) {
+        /** 後期加速：間隔隨波縮短、且一次生成多隻，避免屍潮拖太久 */
+        const gap = Math.max(0.18, DEF.wave.spawnGap - (waveNum - 1) * 0.02);
+        const perTick = 1 + Math.floor((waveNum - 1) / 3);
+        if (zombieSpawnAccum >= gap) {
           zombieSpawnAccum = 0;
-          if (zombiesToSpawn > 0) {
-            spawnZombie();
-            zombiesToSpawn--;
-          } else if (spawnZombie('boss')) {
-            bossToSpawn--;
+          for (let s = 0; s < perTick; s++) {
+            if (!zombies.some((q) => !q.active)) break;
+            if (zombiesToSpawn > 0) {
+              if (spawnZombie()) zombiesToSpawn--;
+              else break;
+            } else if (bossToSpawn > 0) {
+              if (spawnZombie('boss')) bossToSpawn--;
+              else break;
+            } else break;
           }
         }
       } else if (!zombies.some((q) => q.active)) {
@@ -3009,6 +3045,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       towerTracers.forEach((t) => t.mesh.dispose());
       towerSrc?.dispose();
       cannonSrc?.dispose();
+      slowSrc?.dispose();
       bombs.forEach((b) => b.inst.dispose());
       bombSrc?.dispose();
       rangeRing.dispose();

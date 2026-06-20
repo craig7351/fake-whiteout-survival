@@ -105,10 +105,12 @@ export const CONFIG = {
     yard: { minX: 13, maxX: 44, minZ: -28, maxZ: 11 },
     /** 殭屍入口：東牆缺口（z 範圍中心/半寬） */
     zombieGap: { center: -8.5, half: 4 },
-    /** 塔位：保留東側(靠殭屍入口)兩座；靠牧場(西側 x=16.5)兩座已取消 */
+    /** 塔位：東側(靠殭屍入口)箭/砲塔各一；房屋兩側(東西)各一座緩速塔 */
     towerPads: [
       { x: 40.5, z: -24.5, type: 'cannon' as const },
       { x: 40.5, z: 7.5, type: 'arrow' as const },
+      { x: 33.5, z: -9.75, type: 'slow' as const },
+      { x: 17.5, z: -9.75, type: 'slow' as const },
     ],
   },
 
@@ -226,6 +228,8 @@ export const CONFIG = {
     tower: { cost: 250, range: 20, dmg: 4, interval: 0.45, size: 3.2 },
     /** 砲塔（慢、範圍爆擊濺射） */
     cannon: { cost: 450, range: 22, dmg: 6, interval: 1.2, splash: 3.5, size: 4.0 },
+    /** 緩速塔（消防栓，無傷害；範圍內殭屍持續減速） */
+    slow: { cost: 350, range: 16, dmg: 0, interval: 0.5, size: 3.0, slowFactor: 0.45, slowSec: 0.8 },
     /** 塔最大升級等級（每級提升傷害與射速） */
     towerMaxLevel: 4,
   },
