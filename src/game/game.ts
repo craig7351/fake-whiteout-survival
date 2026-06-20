@@ -1022,7 +1022,21 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         }
         break;
     }
-    return out;
+    /** 過濾掉落在「院子(塔防區)/基地/牧場」內的樹（含緩衝），避免樹跑進塔區 */
+    const M = 5;
+    const a = CONFIG.arenaHalf;
+    const y = CONFIG.house.yard;
+    const P1 = CONFIG.pasture;
+    const P2 = CONFIG.pasture2;
+    const inRect = (x: number, z: number, minX: number, maxX: number, minZ: number, maxZ: number) =>
+      x > minX - M && x < maxX + M && z > minZ - M && z < maxZ + M;
+    return out.filter(
+      (p) =>
+        !inRect(p.x, p.z, -a, a, -a, a) && // 店面基地
+        !inRect(p.x, p.z, y.minX, y.maxX, y.minZ, y.maxZ) && // 院子/塔防區
+        !inRect(p.x, p.z, P1.cx - P1.halfX, P1.cx + P1.halfX, P1.cz - P1.halfZ, P1.cz + P1.halfZ) && // 牧場1
+        !inRect(p.x, p.z, P2.cx - P2.halfX, P2.cx + P2.halfX, P2.cz - P2.halfZ, P2.cz + P2.halfZ), // 牧場2
+    );
   }
   /** 依目前佈局重建樹林（切換時呼叫；不重載來源 mesh） */
   function buildTrees() {
