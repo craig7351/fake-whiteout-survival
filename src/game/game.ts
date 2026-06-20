@@ -969,10 +969,8 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
 
   /** ===== 非同步載入模型，完成後建立 instance 池、牛群、玩家視覺 ===== */
   void initAssets();
-  /** ===== 地圖空白處種滿樹木與草（純裝飾，非阻塞載入） ===== */
-  void scatterNature();
 
-  /** 樹林（thin-instance）：佈滿 TREE_MAX 個固定佈點，依 treeVisible 顯示前 N 棵（debug 可調） */
+  /** 樹林：佈滿 TREE_MAX 個固定佈點，依 treeVisible 顯示前 N 棵（debug 可調） */
   let treeField: TreeField | null = null;
   const TREE_MAX = 2000;
   let treeVisible = 500; // 預設較少（thin-instance 不逐棵剔除，棵數直接吃頂點/填充率）
@@ -988,6 +986,9 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     if (Math.abs(x) < 5 && z > a && z < CONFIG.customer.gate.z + 4) return false; // 顧客進場動線
     return true;
   }
+
+  /** 地圖空白處種樹（非阻塞；須在 TREE_MAX/treeField/isClearForDecor 等宣告之後呼叫） */
+  void scatterNature();
 
   /** 程序繪製「雪松」貼圖（透明背景，給 billboard 樹用） */
   function drawPineTexture(): DynamicTexture {
