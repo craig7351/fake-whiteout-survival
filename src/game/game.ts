@@ -107,6 +107,8 @@ export interface GameHandle {
   dispose: () => void;
   setJoystick: (x: number, z: number) => void;
   setMuted: (on: boolean) => void;
+  /** 畫質：設定算繪解析度倍率（1=最清晰；越大越省效能/越糊） */
+  setHardwareScaling: (level: number) => void;
   /** Debug：背後金條的層距（疊高間距） */
   setGoldLayerH: (v: number) => void;
   /** Debug：背後金條離肉的距離（往後位移） */
@@ -855,9 +857,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   }
   /** 漂浮數字（+$／傷害） */
   const floatText = new FloatingText(scene);
-  /** 效能：自適應解析度 + 傷害數字節流 */
-  let hwScale = 1;
-  let fpsAdjT = 0;
+  /** 效能：傷害數字節流（解析度改由玩家在上方下拉選單手動選） */
   let dmgNumThisFrame = 0;
   const DMG_NUM_CAP = 4; // 每幀最多冒幾個傷害數字（迴旋斧一次打全部時不會噴一堆）
   const dmgNumber = (text: string, x: number, z: number) => {
@@ -1380,15 +1380,6 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     const dt = Math.min(0.05, engine.getDeltaTime() / 1000);
     elapsed += dt;
     dmgNumThisFrame = 0; // 每幀重設傷害數字配額
-
-    /** 自適應解析度：FPS 低就降算繪解析度、高就調回，手機屍潮回升最有感 */
-    fpsAdjT += dt;
-    if (fpsAdjT >= 1) {
-      fpsAdjT = 0;
-      const f = engine.getFps();
-      if (f < 28 && hwScale < 2) engine.setHardwareScalingLevel((hwScale = Math.min(2, hwScale + 0.25)));
-      else if (f > 52 && hwScale > 1) engine.setHardwareScalingLevel((hwScale = Math.max(1, hwScale - 0.25)));
-    }
 
     /** --- 移動輸入 --- */
     let ix = joyX;
@@ -3250,6 +3241,9 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     },
     setMuted(on: boolean) {
       sound.setMuted(on);
+    },
+    setHardwareScaling(level: number) {
+      engine.setHardwareScalingLevel(Math.max(0.5, Math.min(3, level)));
     },
     setGoldLayerH(v: number) {
       goldStack.setLayerH(v);

@@ -30,6 +30,18 @@
       <span class="flex h-11 items-center rounded-full bg-slate-900/55 px-3 text-sm font-black text-cyan-100 backdrop-blur-md tabular-nums">
         ⏱️ {{ timeText }}
       </span>
+      <!-- 畫質（解析度）下拉 -->
+      <select
+        v-model.number="quality"
+        @change="onQuality"
+        class="h-11 rounded-full bg-slate-900/55 px-3 text-sm font-bold text-white backdrop-blur-md outline-none"
+        title="畫質：卡頓時選流暢"
+      >
+        <option :value="1">🖥️ 高畫質</option>
+        <option :value="1.5">🖥️ 標準</option>
+        <option :value="2">🖥️ 流暢</option>
+        <option :value="2.5">🖥️ 省電</option>
+      </select>
     </div>
 
     <!-- Debug 面板：背後金條參數 -->
@@ -227,6 +239,14 @@ let game: GameHandle | undefined;
 const MUTE_KEY = 'fake-whiteout:muted';
 const muted = ref(localStorage.getItem(MUTE_KEY) === '1');
 
+/** 畫質（算繪解析度倍率）：1=高畫質、越大越流暢/越糊；玩家自選並記住 */
+const QUALITY_KEY = 'fake-whiteout:quality';
+const quality = ref(Number(localStorage.getItem(QUALITY_KEY) ?? '1') || 1);
+function onQuality() {
+  game?.setHardwareScaling(quality.value);
+  localStorage.setItem(QUALITY_KEY, String(quality.value));
+}
+
 /** 背景音樂：固定播放「歡樂」這首（移除下拉選單） */
 const HAPPY_TRACK = Math.max(0, sound.musicTracks().indexOf('歡樂'));
 
@@ -276,6 +296,7 @@ onMounted(() => {
     onStats: (s) => Object.assign(stats, s),
   });
   game.setMuted(muted.value);
+  game.setHardwareScaling(quality.value); // 套用上次選的畫質
   /** 固定播放「歡樂」（實際播放會等首次點擊/移動解鎖音訊） */
   sound.setMusic(HAPPY_TRACK);
   hintTimer = window.setTimeout(() => (showHint.value = false), 9000);
