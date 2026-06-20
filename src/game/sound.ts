@@ -215,4 +215,10 @@ export const sound = {
     blip(150, 0.35, 'square', 0.32, 60);
     setTimeout(() => blip(70, 0.45, 'sawtooth', 0.35, 28), 70);
   },
+  /** 冰霜爆裂：清脆高音 + 高頻碎裂噪聲（緩速炸彈命中） */
+  frost() {
+    blip(1320, 0.12, 'triangle', 0.18, 660);
+    noise(0.18, 0.16, 'highpass', 4200);
+    setTimeout(() => blip(1760, 0.1, 'sine', 0.12, 990), 60);
+  },
 };

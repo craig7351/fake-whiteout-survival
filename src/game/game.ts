@@ -760,6 +760,43 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   const muzzleFx = makeBurst('muzzlefx', new Color4(1, 0.95, 0.6, 1), new Color4(1, 0.75, 0.2, 1), 0.12, 0.4, 0.12, 4, true);
   /** 藍色冰霜爆裂（緩速炸彈命中用）：偏青白、向外四散、發光 */
   const frostFx = makeBurst('frostfx', new Color4(0.75, 0.95, 1, 1), new Color4(0.2, 0.55, 1, 1), 0.18, 0.7, 0.55, 7, true);
+  /** 藍色冰霜地痕池：緩速炸彈落點短暫顯示一圈（標示減速範圍）後淡出 */
+  const frostPatchMat = new StandardMaterial('frost-patch-mat', scene);
+  frostPatchMat.emissiveColor = new Color3(0.4, 0.8, 1);
+  frostPatchMat.diffuseColor = Color3.Black();
+  frostPatchMat.specularColor = Color3.Black();
+  frostPatchMat.disableLighting = true;
+  const FROST_PATCH_LIFE = 1.6;
+  const frostPatches = Array.from({ length: 10 }, (_, i) => {
+    const d = MeshBuilder.CreateDisc(`frostpatch${i}`, { radius: DEF.slow.splash, tessellation: 24 }, scene);
+    d.rotation.x = Math.PI / 2;
+    d.material = frostPatchMat;
+    d.isPickable = false;
+    d.visibility = 0;
+    d.setEnabled(false);
+    return { mesh: d, life: 0 };
+  });
+  let frostPatchCursor = 0;
+  function spawnFrostPatch(x: number, z: number) {
+    const p = frostPatches[frostPatchCursor];
+    frostPatchCursor = (frostPatchCursor + 1) % frostPatches.length;
+    p.life = FROST_PATCH_LIFE;
+    p.mesh.position.set(x, 0.06, z);
+    p.mesh.visibility = 0.55;
+    p.mesh.setEnabled(true);
+  }
+  function updateFrostPatches(dt: number) {
+    for (const p of frostPatches) {
+      if (p.life <= 0) continue;
+      p.life -= dt;
+      if (p.life <= 0) {
+        p.mesh.setEnabled(false);
+        p.mesh.visibility = 0;
+      } else {
+        p.mesh.visibility = 0.55 * (p.life / FROST_PATCH_LIFE);
+      }
+    }
+  }
   /** 漂浮數字（+$／傷害） */
   const floatText = new FloatingText(scene);
   /** ===== 社群統計累計（每幾秒把增量寫進 localStorage 總計 + 更新排行榜） ===== */
@@ -2666,6 +2703,8 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       /** 無可用炸彈（模型未載入/池滿）→ 直接在目標生效，確保不漏 */
       if (slow) {
         burstAt(frostFx, tx, 1.0, tz, 30);
+        spawnFrostPatch(tx, tz);
+        sound.frost();
         applySlowSplash(tx, tz, DEF.slow.splash, slowFactor);
       } else {
         spawnExplosion(tx, 1.2, tz);
@@ -2690,6 +2729,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
   /** 更新所有飛行中的炸彈；抵達目標 → 爆炸（傷害）或藍色減速 */
   function updateBombs(dt: number) {
     const dur = 0.5;
+    updateFrostPatches(dt);
     for (const b of bombs) {
       if (!b.active) continue;
       b.t += dt / dur;
@@ -2698,6 +2738,8 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
         b.inst.setEnabled(false);
         if (b.slow) {
           burstAt(frostFx, b.tx, 1.0, b.tz, 30); // 藍色冰霜爆裂
+          spawnFrostPatch(b.tx, b.tz); // 地面冰霜圈（標示減速範圍）
+          sound.frost();
           applySlowSplash(b.tx, b.tz, b.splash, b.slowFactor);
         } else {
           spawnExplosion(b.tx, 1.2, b.tz);
@@ -3147,6 +3189,8 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
       bombs.forEach((b) => b.inst.dispose());
       bombSrc?.dispose();
       slowBombSrc?.dispose();
+      frostPatches.forEach((p) => p.mesh.dispose());
+      frostPatchMat.dispose();
       rangeRing.dispose();
       towerPads.forEach((p) => p.pips.forEach((m) => m.dispose()));
       pipMat.dispose();
