@@ -446,6 +446,14 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     { x: CONFIG.cashier.x, z: CONFIG.cashier.z, emoji: '🧑‍💼', name: '收銀員', effect: '自動收銀台的錢', hint: '站著付款購買' },
     { x: CONFIG.house.x, z: CONFIG.house.z, emoji: '🛡️', name: '開啟塔防', effect: '殭屍來襲，蓋塔守住基地圍欄', hint: '身上滿 $10000 自動開啟（不扣錢）' },
     ...WEAPONS.map((w) => ({ x: w.x, z: w.z, emoji: w.emoji, name: w.name, effect: WEAPON_EFFECT[w.id] ?? '', hint: '踩上去購買／切換' })),
+    ...CONFIG.house.towerPads.map((p) => ({
+      x: p.x,
+      z: p.z,
+      emoji: p.type === 'cannon' ? '💣' : p.type === 'slow' ? '❄️' : '🏹',
+      name: p.type === 'cannon' ? '砲塔' : p.type === 'slow' ? '緩速塔' : '機槍塔',
+      effect: p.type === 'cannon' ? '範圍爆擊，濺射傷害' : p.type === 'slow' ? '丟藍彈讓殭屍減速（無傷害）' : '單體快速射擊',
+      hint: '站著付款蓋塔，點塔可升級',
+    })),
   ];
   /** 紅磚圍牆＋塔位掛在此節點上，買下房子後一次顯示 */
   const houseHolder = new TransformNode('house-yard', scene);
