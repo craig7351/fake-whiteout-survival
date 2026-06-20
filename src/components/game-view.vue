@@ -15,7 +15,7 @@
       <button
         class="flex h-11 w-11 items-center justify-center rounded-full text-xl text-white backdrop-blur-md transition active:scale-95"
         :class="showDebug ? 'bg-fuchsia-500' : 'bg-slate-900/55 hover:bg-slate-800/70'"
-        @click="showDebug = !showDebug"
+        @click="onToggleDebug"
       >
         🛠️
       </button>
@@ -259,6 +259,17 @@ const safeTop = { top: 'max(0.75rem, env(safe-area-inset-top))' };
 
 /** Debug：背後金條參數（與 game.ts 預設一致） */
 const showDebug = ref(false);
+/** 開啟 Debug 需輸入留言板刪除密碼（8bytes生日）；關閉不需要 */
+function onToggleDebug() {
+  if (showDebug.value) {
+    showDebug.value = false;
+    return;
+  }
+  const k = window.prompt('輸入除錯密碼（＝留言板刪除碼）：') || '';
+  if (!k) return;
+  if (k === '19840501') showDebug.value = true;
+  else window.alert('密碼錯誤');
+}
 const goldLayerH = ref(0.48);
 const goldBackOffset = ref(2.48);
 function onGoldLayerH() {
