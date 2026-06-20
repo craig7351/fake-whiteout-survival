@@ -41,10 +41,26 @@
         </span>
       </div>
 
+      <!-- 玩家姓名（必填才能開始） -->
+      <input
+        v-model="name"
+        @change="onName"
+        maxlength="12"
+        placeholder="輸入你的名字"
+        class="glass mb-2 w-full rounded-xl px-4 py-2.5 text-center text-base font-bold text-slate-100 outline-none placeholder:text-slate-400"
+      />
+
       <!-- 主 CTA -->
-      <button class="play-btn mb-5 w-full" @click="emit('start')">
+      <button
+        class="play-btn mb-2 w-full"
+        :class="{ 'cursor-not-allowed opacity-50': !canStart }"
+        :disabled="!canStart"
+        @click="onStart"
+      >
         <span class="relative z-10">▶ 立即遊玩</span>
       </button>
+      <p v-if="!canStart" class="mb-3 text-xs font-bold text-rose-300/90">請先輸入你的名字才能開始</p>
+      <div v-else class="mb-3" />
 
       <!-- 功能按鈕：排行榜 / 成就 / 留言板 -->
       <div class="mb-5 grid w-full grid-cols-3 gap-2.5">
@@ -208,7 +224,6 @@ import {
   getLeaderboard,
   getMessages,
   postMessage,
-  getName,
   setName,
   getOnline,
   fetchTotals,
@@ -241,7 +256,8 @@ const flakes = Array.from({ length: 32 }, () => ({
 const totals = ref(getTotals());
 const leaderboard = ref(getLeaderboard(10));
 const online = ref(getOnline());
-const name = ref(getName());
+/** 直接讀已存的名字（不自動產生預設）→ 新玩家為空、強制輸入才能開始 */
+const name = ref(localStorage.getItem('fake-whiteout:name') ?? '');
 const messages = ref(getMessages());
 const msgText = ref('');
 /** 留言串（主留言 + 回覆） */
@@ -289,8 +305,14 @@ function fmt(n: number) {
   return n.toLocaleString();
 }
 function onName() {
+  setName(name.value); // 只儲存，不回填預設（讓欄位可為空以擋住開始）
+}
+/** 必填姓名才能開始 */
+const canStart = computed(() => name.value.trim().length > 0);
+function onStart() {
+  if (!canStart.value) return;
   setName(name.value);
-  name.value = getName();
+  emit('start');
 }
 function refreshMessages() {
   messages.value = getMessages();
