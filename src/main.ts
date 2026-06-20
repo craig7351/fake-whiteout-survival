@@ -28,12 +28,18 @@ document.addEventListener(
     const t = e.target as HTMLElement | null;
     if (t && t.closest('button, input, select, textarea, a')) return; // UI 控制項照常
     const now = e.timeStamp;
-    if (now - lastTouchEnd <= 300) e.preventDefault();
+    if (now - lastTouchEnd <= 500) e.preventDefault(); // 窗口加大到 500ms，攔住較慢的雙擊
     lastTouchEnd = now;
   },
   { passive: false },
 );
-/** 同時擋掉手勢縮放（雙指）外的 gesturestart（iOS 專有） */
+/** 雙擊（dblclick）也擋掉，雙保險 */
+document.addEventListener('dblclick', (e) => {
+  const t = e.target as HTMLElement | null;
+  if (t && t.closest('button, input, select, textarea, a')) return;
+  e.preventDefault();
+});
+/** 同時擋掉手勢縮放（雙指）的 gesturestart（iOS 專有） */
 document.addEventListener('gesturestart', (e) => e.preventDefault());
 
 /**

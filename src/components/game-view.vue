@@ -38,7 +38,7 @@
       <div>vv: {{ zoomDbg.vvW }}×{{ zoomDbg.vvH }}</div>
       <div>inner: {{ zoomDbg.inW }}×{{ zoomDbg.inH }}</div>
       <div>client: {{ zoomDbg.clientW }} dpr: {{ zoomDbg.dpr }}</div>
-      <div>off: {{ zoomDbg.offX }},{{ zoomDbg.offY }} zoomBtn: {{ pageZoomView }}</div>
+      <div>off: {{ zoomDbg.offX }},{{ zoomDbg.offY }}</div>
     </div>
 
     <!-- 第二列（右側，避開左側狀態列）：畫質 + 樹木佈局下拉 -->
@@ -153,23 +153,6 @@
 
     <joystick class="absolute bottom-8 left-8 z-10" @move="onJoyMove" @end="onJoyEnd" />
 
-    <!-- 左側（移到搖桿上方，避免被搖桿吃掉觸控）：手動縮放 -->
-    <div class="absolute bottom-[16rem] left-3 z-40 flex flex-col gap-2">
-      <button
-        class="flex h-9 w-9 items-center justify-center rounded-full bg-slate-900/70 text-lg font-black text-white ring-1 ring-cyan-200/20 backdrop-blur-md active:scale-90"
-        title="放大畫面"
-        @click="zoomBy(0.1)"
-      >
-        ＋
-      </button>
-      <button
-        class="flex h-9 w-9 items-center justify-center rounded-full bg-slate-900/70 text-lg font-black text-white ring-1 ring-cyan-200/20 backdrop-blur-md active:scale-90"
-        title="縮小畫面（卡住時連點回到正常）"
-        @click="zoomBy(-0.1)"
-      >
-        －
-      </button>
-    </div>
 
     <!-- 塔防開啟說明（買房後跳出） -->
     <div v-if="stats.showDefenseIntro" class="absolute inset-0 z-50 flex items-center justify-center bg-slate-950/65 p-5 backdrop-blur-md">
@@ -277,7 +260,6 @@ let game: GameHandle | undefined;
 
 /** 縮放 Debug 數值（比對正常 vs 卡住放大） */
 const zoomDbg = reactive({ scale: 1, vvW: 0, vvH: 0, inW: 0, inH: 0, dpr: 1, clientW: 0, offX: 0, offY: 0 });
-const pageZoomView = ref(1);
 function updateZoomDbg() {
   const vv = window.visualViewport;
   zoomDbg.scale = vv ? Math.round(vv.scale * 1000) / 1000 : 1;
@@ -397,20 +379,6 @@ function onStartDefense() {
 }
 function onRestart() {
   location.reload();
-}
-/** 手動縮放：強制設定 viewport 的 scale（卡在放大時可連點「－」回到 1） */
-let pageZoom = 1;
-function zoomBy(delta: number) {
-  // 下限 1：iOS 對 <1 的 scale 會忽略，故 − 只到 1（等於把卡住的放大夾回正常）
-  pageZoom = Math.max(1, Math.min(2, Math.round((pageZoom + delta) * 10) / 10));
-  pageZoomView.value = pageZoom;
-  const m = document.querySelector('meta[name="viewport"]');
-  if (m) {
-    m.setAttribute(
-      'content',
-      `width=device-width, initial-scale=${pageZoom}, maximum-scale=${pageZoom}, minimum-scale=${pageZoom}, user-scalable=no, viewport-fit=cover`,
-    );
-  }
 }
 const timeText = computed(() => {
   const t = Math.floor(stats.gameTime);
