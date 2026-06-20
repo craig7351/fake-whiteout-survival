@@ -4,6 +4,7 @@
 > 靈感來自買量廣告常見的「雪地賣肉舖」。
 
 🎮 **線上遊玩(全球共享排行榜):** https://fake-whiteout-survival.pages.dev
+🎬 **遊玩影片(YouTube Shorts):** https://youtube.com/shorts/TsVlYFNEnK8
 
 技術棧:**Vue 3 + Vite 6 + TypeScript + Tailwind 4 + Babylon.js 9**,後端 **Cloudflare Pages Functions + D1**。
 
