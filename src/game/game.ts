@@ -1064,10 +1064,7 @@ export function createGame(canvas: HTMLCanvasElement, options: GameOptions = {})
     dogFleet = dogFleetLoaded;
     hunterFleet = hunterFleetLoaded;
     cashierFleet = cashierFleetLoaded;
-    /** 場外北極熊（純氣氛，立在牧場後方） */
-    void loadProp(scene, '/models/winter/polar_bear.glb', 3.4).then((b) => {
-      if (b) b.position.set(-12, 0, P.cz - P.halfZ - 6);
-    });
+    /** （牧場旁北極熊裝飾已移除：無遊戲功能） */
     /** （房子已移除：改為「殭屍攻入基地」判定，不再放置房屋模型） */
     /** 紅磚圍牆：沿院子周邊砌兩層磚（西側留缺口對齊走道），掛在 houseHolder 上 */
     void loadProp(scene, '/models/bricks_red.glb', BRICK_SIZE).then((b) => {
