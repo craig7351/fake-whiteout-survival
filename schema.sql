@@ -19,9 +19,16 @@ CREATE TABLE IF NOT EXISTS stats (
   total_money INTEGER NOT NULL DEFAULT 0,
   total_cows INTEGER NOT NULL DEFAULT 0,
   total_monsters INTEGER NOT NULL DEFAULT 0,
-  plays INTEGER NOT NULL DEFAULT 0
+  plays INTEGER NOT NULL DEFAULT 0,
+  opens INTEGER NOT NULL DEFAULT 0
 );
 INSERT OR IGNORE INTO stats (id) VALUES (1);
+
+-- 每小時上線尖峰人數（hour = floor(ms/3600000)）
+CREATE TABLE IF NOT EXISTS online_hourly (
+  hour INTEGER PRIMARY KEY,
+  peak INTEGER NOT NULL
+);
 
 -- 在線（心跳）：近 90 秒活躍人數
 CREATE TABLE IF NOT EXISTS presence (

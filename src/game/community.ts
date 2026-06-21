@@ -63,10 +63,23 @@ export interface Totals {
   cows: number; // 殺了多少牛
   monsters: number; // 殺了多少怪物（殭屍）
   runs: number; // 遊玩場次
+  opens?: number; // 遊戲被開啟次數
 }
 export function getTotals(): Totals {
-  return { money: 0, cows: 0, monsters: 0, runs: 0, ...read<Partial<Totals>>(TOTALS_KEY, {}) };
+  return { money: 0, cows: 0, monsters: 0, runs: 0, opens: 0, ...read<Partial<Totals>>(TOTALS_KEY, {}) };
 }
+/** 遊戲被開啟一次（首頁載入時呼叫）：後端累計 + 本機備援 */
+export function recordOpen() {
+  const o = Number(localStorage.getItem('fake-whiteout:opens') ?? '0') + 1;
+  try {
+    localStorage.setItem('fake-whiteout:opens', String(o));
+  } catch {
+    /* ignore */
+  }
+  post('/open', {});
+}
+/** 最近 24 小時每小時在線尖峰（後端）；失敗回 null */
+export const fetchOnlineHistory = () => getJSON<{ at: number; peak: number }[]>('/online-history');
 export function addTotals(d: Partial<Totals>) {
   const t = getTotals();
   write(TOTALS_KEY, {

@@ -62,8 +62,8 @@
       <p v-if="!canStart" class="mb-3 text-xs font-bold text-rose-300/90">請先輸入你的名字才能開始</p>
       <div v-else class="mb-3" />
 
-      <!-- 功能按鈕：排行榜 / 成就 / 留言板 -->
-      <div class="mb-5 grid w-full grid-cols-3 gap-2.5">
+      <!-- 功能按鈕：排行榜 / 成就 / 留言板 / 線上人數 -->
+      <div class="mb-5 grid w-full grid-cols-2 gap-2.5">
         <button class="menu-btn" @click="open('leaderboard')">
           <span class="text-2xl drop-shadow">🏆</span><span>排行榜</span>
         </button>
@@ -73,6 +73,9 @@
         </button>
         <button class="menu-btn" @click="open('messages')">
           <span class="text-2xl drop-shadow">💬</span><span>留言板</span>
+        </button>
+        <button class="menu-btn" @click="open('online')">
+          <span class="text-2xl drop-shadow">📈</span><span>線上人數</span>
         </button>
       </div>
 
@@ -112,6 +115,10 @@
           <div class="text-xl font-black text-sky-300">🎮 {{ fmt(totals.runs) }}</div>
           <div class="stat-label">遊玩場次</div>
         </div>
+        <div class="glass stat-card col-span-2">
+          <div class="text-xl font-black text-cyan-200">🚪 {{ fmt(totals.opens ?? 0) }}</div>
+          <div class="stat-label">遊戲被開啟次數</div>
+        </div>
       </div>
     </div>
 
@@ -141,6 +148,21 @@
               </div>
             </div>
             <div v-else class="py-6 text-center text-sm text-slate-500">還沒有紀錄,快去玩第一場!</div>
+          </template>
+
+          <!-- 每小時上線人數 -->
+          <template v-else-if="panel === 'online'">
+            <div class="mb-3 text-center text-sm text-cyan-200">目前線上 <b class="text-emerald-300">{{ online }}</b> 人</div>
+            <div v-if="onlineHistory.length" class="flex flex-col gap-1">
+              <div v-for="(h, i) in onlineHistory" :key="i" class="flex items-center gap-2 text-xs">
+                <span class="w-14 shrink-0 text-slate-400">{{ hourLabel(h.at) }}</span>
+                <div class="h-3.5 flex-1 overflow-hidden rounded-full bg-white/10">
+                  <div class="h-full rounded-full bg-cyan-400 transition-[width]" :style="{ width: barPct(h.peak) + '%' }" />
+                </div>
+                <span class="w-8 text-right font-black text-cyan-200">{{ h.peak }}</span>
+              </div>
+            </div>
+            <div v-else class="py-6 text-center text-sm text-slate-500">還沒有歷史資料,等大家上線後就會記錄</div>
           </template>
 
           <!-- 成就 -->
@@ -238,6 +260,8 @@ import {
   fetchLeaderboard,
   fetchMessages,
   fetchOnline,
+  fetchOnlineHistory,
+  recordOpen,
   sendHeartbeat,
   deleteMessage,
   threadMessages,
@@ -276,14 +300,22 @@ const replyText = ref('');
 let hbTimer: number | undefined;
 
 /** 彈窗：null=關閉 */
-type Panel = 'leaderboard' | 'achievements' | 'messages';
+type Panel = 'leaderboard' | 'achievements' | 'messages' | 'online';
 const panel = ref<Panel | null>(null);
+const onlineHistory = ref<{ at: number; peak: number }[]>([]);
 const panelTitle = computed(() =>
-  panel.value === 'leaderboard' ? '🏆 排行榜（撐最久）' : panel.value === 'achievements' ? '🏅 成就' : '💬 留言板',
+  panel.value === 'leaderboard'
+    ? '🏆 排行榜（撐最久）'
+    : panel.value === 'achievements'
+      ? '🏅 成就'
+      : panel.value === 'online'
+        ? '📈 每小時上線人數'
+        : '💬 留言板',
 );
 function open(p: Panel) {
   panel.value = p;
   void refresh();
+  if (p === 'online') void fetchOnlineHistory().then((h) => h && (onlineHistory.value = h));
 }
 function close() {
   panel.value = null;
@@ -298,6 +330,7 @@ async function refresh() {
 }
 
 onMounted(() => {
+  recordOpen(); // 記錄一次「遊戲被開啟」
   sendHeartbeat();
   void refresh();
   hbTimer = window.setInterval(() => {
@@ -311,6 +344,15 @@ onUnmounted(() => {
 
 function fmt(n: number) {
   return n.toLocaleString();
+}
+/** 每小時上線：時間標籤與長條比例 */
+function hourLabel(at: number): string {
+  const d = new Date(at);
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}時`;
+}
+function barPct(peak: number): number {
+  const max = Math.max(1, ...onlineHistory.value.map((h) => h.peak));
+  return Math.round((peak / max) * 100);
 }
 function onName() {
   setName(name.value); // 只儲存，不回填預設（讓欄位可為空以擋住開始）
