@@ -8,10 +8,10 @@ export const onRequestGet = async ({ env }: FnContext): Promise<Response> => {
       .bind(now - 90000)
       .first<{ n: number }>();
     const n = Math.max(1, row?.n ?? 0);
-    /** 記錄此小時的在線尖峰（取最大值），供歷史查詢 */
-    const hour = Math.floor(now / 3600000);
-    await env.DB.prepare('INSERT INTO online_hourly (hour, peak) VALUES (?, ?) ON CONFLICT(hour) DO UPDATE SET peak = MAX(peak, ?)')
-      .bind(hour, n, n)
+    /** 記錄今日的在線尖峰（取最大值），供 7 天歷史查詢 */
+    const day = Math.floor(now / 86400000);
+    await env.DB.prepare('INSERT INTO online_daily (day, peak) VALUES (?, ?) ON CONFLICT(day) DO UPDATE SET peak = MAX(peak, ?)')
+      .bind(day, n, n)
       .run();
     /** 機會性清除過期列 */
     await env.DB.prepare('DELETE FROM presence WHERE last_seen < ?')

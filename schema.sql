@@ -19,14 +19,13 @@ CREATE TABLE IF NOT EXISTS stats (
   total_money INTEGER NOT NULL DEFAULT 0,
   total_cows INTEGER NOT NULL DEFAULT 0,
   total_monsters INTEGER NOT NULL DEFAULT 0,
-  plays INTEGER NOT NULL DEFAULT 0,
-  opens INTEGER NOT NULL DEFAULT 0
+  plays INTEGER NOT NULL DEFAULT 0
 );
 INSERT OR IGNORE INTO stats (id) VALUES (1);
 
--- 每小時上線尖峰人數（hour = floor(ms/3600000)）
-CREATE TABLE IF NOT EXISTS online_hourly (
-  hour INTEGER PRIMARY KEY,
+-- 每日上線尖峰人數（day = floor(ms/86400000)），供首頁 7 天折線
+CREATE TABLE IF NOT EXISTS online_daily (
+  day INTEGER PRIMARY KEY,
   peak INTEGER NOT NULL
 );
 

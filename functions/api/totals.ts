@@ -33,14 +33,13 @@ export const onRequestPost = async ({ request, env }: FnContext): Promise<Respon
 export const onRequestGet = async ({ env }: FnContext): Promise<Response> => {
   try {
     const s = await env.DB.prepare(
-      'SELECT total_money,total_cows,total_monsters,plays,opens FROM stats WHERE id=1',
-    ).first<{ total_money: number; total_cows: number; total_monsters: number; plays: number; opens: number }>();
+      'SELECT total_money,total_cows,total_monsters,plays FROM stats WHERE id=1',
+    ).first<{ total_money: number; total_cows: number; total_monsters: number; plays: number }>();
     return json({
       money: s?.total_money ?? 0,
       cows: s?.total_cows ?? 0,
       monsters: s?.total_monsters ?? 0,
       runs: s?.plays ?? 0,
-      opens: s?.opens ?? 0,
     });
   } catch {
     return json({ error: 'db error' }, 500);

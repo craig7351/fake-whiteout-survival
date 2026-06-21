@@ -115,10 +115,6 @@
           <div class="text-xl font-black text-sky-300">🎮 {{ fmt(totals.runs) }}</div>
           <div class="stat-label">遊玩場次</div>
         </div>
-        <div class="glass stat-card col-span-2">
-          <div class="text-xl font-black text-cyan-200">🚪 {{ fmt(totals.opens ?? 0) }}</div>
-          <div class="stat-label">遊戲被開啟次數</div>
-        </div>
       </div>
     </div>
 
@@ -150,19 +146,20 @@
             <div v-else class="py-6 text-center text-sm text-slate-500">還沒有紀錄,快去玩第一場!</div>
           </template>
 
-          <!-- 每小時上線人數 -->
+          <!-- 最近 7 天每日上線人數（折線圖） -->
           <template v-else-if="panel === 'online'">
-            <div class="mb-3 text-center text-sm text-cyan-200">目前線上 <b class="text-emerald-300">{{ online }}</b> 人</div>
-            <div v-if="onlineHistory.length" class="flex flex-col gap-1">
-              <div v-for="(h, i) in onlineHistory" :key="i" class="flex items-center gap-2 text-xs">
-                <span class="w-14 shrink-0 text-slate-400">{{ hourLabel(h.at) }}</span>
-                <div class="h-3.5 flex-1 overflow-hidden rounded-full bg-white/10">
-                  <div class="h-full rounded-full bg-cyan-400 transition-[width]" :style="{ width: barPct(h.peak) + '%' }" />
-                </div>
-                <span class="w-8 text-right font-black text-cyan-200">{{ h.peak }}</span>
-              </div>
+            <div class="mb-3 text-center text-sm text-cyan-200">目前線上 <b class="text-emerald-300">{{ online }}</b> 人 · 最近 7 天每日尖峰</div>
+            <div v-if="chart.pts.length" class="rounded-lg bg-white/5 p-3">
+              <svg :viewBox="`0 0 ${chart.W} ${chart.H}`" class="w-full">
+                <polyline :points="chart.poly" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
+                <g v-for="(p, i) in chart.pts" :key="i">
+                  <circle :cx="p.x" :cy="p.y" r="3.5" fill="#7dd3fc" />
+                  <text :x="p.x" :y="p.y - 7" fill="#cfe6ff" font-size="10" font-weight="bold" text-anchor="middle">{{ p.peak }}</text>
+                  <text :x="p.x" :y="chart.H - 3" fill="#9fb6cc" font-size="9" text-anchor="middle">{{ p.label }}</text>
+                </g>
+              </svg>
             </div>
-            <div v-else class="py-6 text-center text-sm text-slate-500">還沒有歷史資料,等大家上線後就會記錄</div>
+            <div v-else class="py-6 text-center text-sm text-slate-500">還沒有歷史資料,等大家上線後就會逐日記錄</div>
           </template>
 
           <!-- 成就 -->
@@ -261,7 +258,6 @@ import {
   fetchMessages,
   fetchOnline,
   fetchOnlineHistory,
-  recordOpen,
   sendHeartbeat,
   deleteMessage,
   threadMessages,
@@ -309,7 +305,7 @@ const panelTitle = computed(() =>
     : panel.value === 'achievements'
       ? '🏅 成就'
       : panel.value === 'online'
-        ? '📈 每小時上線人數'
+        ? '📈 最近 7 天上線人數'
         : '💬 留言板',
 );
 function open(p: Panel) {
@@ -330,7 +326,6 @@ async function refresh() {
 }
 
 onMounted(() => {
-  recordOpen(); // 記錄一次「遊戲被開啟」
   sendHeartbeat();
   void refresh();
   hbTimer = window.setInterval(() => {
@@ -345,15 +340,26 @@ onUnmounted(() => {
 function fmt(n: number) {
   return n.toLocaleString();
 }
-/** 每小時上線：時間標籤與長條比例 */
-function hourLabel(at: number): string {
+/** 最近 7 天每日上線：折線圖座標 */
+function dayLabel(at: number): string {
   const d = new Date(at);
-  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}時`;
+  return `${d.getMonth() + 1}/${d.getDate()}`;
 }
-function barPct(peak: number): number {
-  const max = Math.max(1, ...onlineHistory.value.map((h) => h.peak));
-  return Math.round((peak / max) * 100);
-}
+const chart = computed(() => {
+  const data = onlineHistory.value;
+  const W = 300;
+  const H = 120;
+  const padX = 22;
+  const padY = 20;
+  const max = Math.max(1, ...data.map((d) => d.peak));
+  const n = data.length;
+  const pts = data.map((d, i) => {
+    const x = n <= 1 ? W / 2 : padX + (i / (n - 1)) * (W - 2 * padX);
+    const y = padY + (1 - d.peak / max) * (H - 2 * padY);
+    return { x, y, peak: d.peak, label: dayLabel(d.at) };
+  });
+  return { W, H, max, pts, poly: pts.map((p) => `${p.x},${p.y}`).join(' ') };
+});
 function onName() {
   setName(name.value); // 只儲存，不回填預設（讓欄位可為空以擋住開始）
 }
