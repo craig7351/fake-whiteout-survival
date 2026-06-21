@@ -3,9 +3,9 @@
 > 一款雪地主題的 **放置經營 × 塔防** 網頁小遊戲：經營肉舖 → 擴張牧場 → 自動化生產 → 蓋房子 → 蓋塔守城,撐過 **30 波殭屍** 即破關!
 > 靈感來自買量廣告常見的「雪地賣肉舖」。
 
-🎮 **線上遊玩(全球共享排行榜):** https://fake-whiteout-survival.pages.dev
-📰 **遊戲介紹頁:** https://craig7351.github.io/fake-whiteout-survival/
-🎬 **遊玩影片(YouTube Shorts):** https://youtube.com/shorts/TsVlYFNEnK8
+- 🎮 **線上遊玩(全球共享排行榜):** https://fake-whiteout-survival.pages.dev
+- 📰 **遊戲介紹頁:** https://craig7351.github.io/fake-whiteout-survival/
+- 🎬 **遊玩影片(YouTube Shorts):** https://youtube.com/shorts/TsVlYFNEnK8
 
 技術棧:**Vue 3 + Vite 6 + TypeScript + Tailwind 4 + Babylon.js 9**,後端 **Cloudflare Pages Functions + D1**。
 
