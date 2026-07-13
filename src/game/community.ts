@@ -177,7 +177,17 @@ export function getOnline(): number {
 }
 /** 後端線上人數；失敗回 null */
 export const fetchOnline = () => getJSON<{ online: number }>('/online');
-/** 心跳上報（在線標記） */
-export function sendHeartbeat() {
-  post('/heartbeat', {});
+/** 進場記錄（取代心跳）：標記此裝置在線並回傳近 3 小時人數；進場只呼叫一次 */
+export async function enterOnline(): Promise<{ online: number } | null> {
+  try {
+    const res = await fetch(`${BASE}/online`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ deviceId: deviceId() }),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as { online: number };
+  } catch {
+    return null;
+  }
 }

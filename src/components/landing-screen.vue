@@ -244,7 +244,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted } from 'vue';
+import { computed, ref, onMounted } from 'vue';
 import { ACHIEVEMENTS, loadAchievements } from '../game/achievements';
 import {
   getTotals,
@@ -258,7 +258,7 @@ import {
   fetchMessages,
   fetchOnline,
   fetchOnlineHistory,
-  sendHeartbeat,
+  enterOnline,
   deleteMessage,
   threadMessages,
   type Msg,
@@ -293,7 +293,6 @@ const threads = computed(() => threadMessages(messages.value));
 /** 目前展開回覆輸入的留言 id */
 const replyTo = ref<number | null>(null);
 const replyText = ref('');
-let hbTimer: number | undefined;
 
 /** 彈窗：null=關閉 */
 type Panel = 'leaderboard' | 'achievements' | 'messages' | 'online';
@@ -326,15 +325,8 @@ async function refresh() {
 }
 
 onMounted(() => {
-  sendHeartbeat();
+  void enterOnline().then((o) => o && (online.value = o.online));   // 進場記錄 + 取人數（僅一次，不再輪詢）
   void refresh();
-  hbTimer = window.setInterval(() => {
-    sendHeartbeat();
-    void refresh();
-  }, 60000);
-});
-onUnmounted(() => {
-  if (hbTimer !== undefined) clearInterval(hbTimer);
 });
 
 function fmt(n: number) {
