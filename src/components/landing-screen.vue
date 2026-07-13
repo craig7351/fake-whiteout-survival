@@ -309,24 +309,22 @@ const panelTitle = computed(() =>
 );
 function open(p: Panel) {
   panel.value = p;
-  void refresh();
-  if (p === 'online') void fetchOnlineHistory().then((h) => h && (onlineHistory.value = h));
+  // 只抓「該視窗」需要的資料（不再一次抓全部）
+  if (p === 'leaderboard') void fetchLeaderboard(10).then((lb) => lb && (leaderboard.value = lb));
+  else if (p === 'messages') void fetchMessages().then((m) => m && (messages.value = m));
+  else if (p === 'online') {
+    void fetchOnline().then((o) => o && (online.value = o.online));
+    void fetchOnlineHistory().then((h) => h && (onlineHistory.value = h));
+  }
+  // achievements：本機資料，不需抓後端
 }
 function close() {
   panel.value = null;
 }
 
-async function refresh() {
-  const [t, lb, msg, on] = await Promise.all([fetchTotals(), fetchLeaderboard(10), fetchMessages(), fetchOnline()]);
-  if (t) totals.value = t;
-  if (lb) leaderboard.value = lb;
-  if (msg) messages.value = msg;
-  if (on) online.value = on.online;
-}
-
 onMounted(() => {
-  void enterOnline().then((o) => o && (online.value = o.online));   // 進場記錄 + 取人數（僅一次，不再輪詢）
-  void refresh();
+  void enterOnline().then((o) => o && (online.value = o.online));   // 進場記錄 + 取人數（僅一次）
+  void fetchTotals().then((t) => t && (totals.value = t));           // 底部全服統計（僅一次）
 });
 
 function fmt(n: number) {
